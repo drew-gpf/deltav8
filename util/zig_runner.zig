@@ -30,6 +30,7 @@ pub fn main() !u8 {
     // If it does we want to invoke zig build with the given args.
     // In either case we will build the object file verbaitim as we're subverting all C compilation.
     // todo: this is stupid but it works for now
+    // todo: we can cache all of this in zig-cache since it needs to be deleted when cmake is ran
     if (std.ascii.endsWithIgnoreCase(args[args.len-1], "cmake_dummy.c")) {
         var build_args = std.ArrayList([]const u8).init(allocator);
         defer build_args.deinit();

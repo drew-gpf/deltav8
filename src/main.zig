@@ -48,11 +48,12 @@ export fn main() void {
 
         // Try to get the TF Luna packet. This might not be valid if:
         // - This is the first iteration
-        // - We received an unrelated IRQ
+        // - We received an unrelated IRQ (e.g. USB serial alarm)
         // - The UART FIFO queue triggered an IRQ but the level is set such that we still have more bytes to read
         const next_luna_opt = uart.getNextLuna();
 
         // Wait for next IRQ with IRQs masked to prevent the RX IRQ from getting ignored.
+        // In practice this will sleep until the next UART IRQ unless USB serial output is enabled.
         intrin.wfi();
         intrin.cpsiei();
 

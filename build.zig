@@ -25,7 +25,6 @@ pub fn build(b: *std.build.Builder) !void {
     b.getInstallStep().dependOn(&obj.step);
 
     // Set the target to exactly match the RP2040 IC; a 32-bit ARM Cortex M0+.
-    // Additionally the pico SDK wants us to generate Thumb code.
     obj.setTarget(.{
         .cpu_arch = .thumb,
         .os_tag = .freestanding,

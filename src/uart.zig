@@ -26,8 +26,14 @@ const c = @cImport({
 });
 
 pub const TfLunaStandard9Cm = extern union {
+    /// Magic number for header field
+    pub const header_magic: u16 = 0x5959;
+
+    /// Maximum distance, in centimeters, that the sensor is able to report.
+    pub const max_dist: u16 = 1200;
+
     fields: packed struct {
-        /// Header, must be equal to 0x5959
+        /// Header, must be equal to header_magic.
         header: u16,
 
         /// Distance, in centimeters, to nearest target. Must be between 0-1200. If outside that range,
@@ -47,11 +53,10 @@ pub const TfLunaStandard9Cm = extern union {
 
     /// Whether or not the struct's header is valid i.e. whether or not the data should be interpreted.
     pub fn isHeaderValid(this: *const TfLunaStandard9Cm) bool {
-        // First check the header magic number
-        if (this.fields.header != 0x5959)
+        if (this.fields.header != header_magic)
             return false;
 
-        // Then compute the checksum.
+        // Compute a simple wrapping checksum of the first 8 bytes i.e. before the checksum byte
         var checksum: u8 = 0;
 
         for (this.bytes[0..8]) |byte| {
@@ -63,7 +68,7 @@ pub const TfLunaStandard9Cm = extern union {
 
     /// Get the distance value, or null if it's invalid.
     pub fn getValidDist(this: *const TfLunaStandard9Cm) ?u16 {
-        return if (this.fields.dist <= 1200) this.fields.dist else null;
+        return if (this.fields.dist <= max_dist) this.fields.dist else null;
     }
 
     /// Get the temperature of the device, in degrees celcius.
