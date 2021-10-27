@@ -87,6 +87,9 @@ comptime {
         @compileLog("Invalid size of fields, bytes; must be 9 bytes", @sizeOf(fields_type), @sizeOf(bytes_type));
 }
 
+/// uart0 pointer from the SDK. This must be done here as the relevant macro can't be translated.
+pub const uart0 = @intToPtr(*c.uart_inst_t, 0x40034000);
+
 /// The current data package read from the previous IRQ.
 var current_luna_data: TfLunaStandard9Cm = undefined;
 
@@ -103,20 +106,20 @@ var current_luna_byte: usize = 0;
 /// and thus we stand to save some power by waiting for the next IRQ instead of constantly blocking.
 pub fn init() void {
     // Init the TF Luna UART
-    _ = c.uart_init(uart0(), 115200);
+    _ = c.uart_init(uart0, 115200);
 
     // Designate GPIO pins. Practically this enforces how the system is wired.
     c.gpio_set_function(0, c.GPIO_FUNC_UART);
     c.gpio_set_function(1, c.GPIO_FUNC_UART);
 
     // Configure the TF Luna UART
-    uart_set_format(uart0(), 8, 1, c.UART_PARITY_NONE);
-    uart_set_hw_flow(uart0(), false, false);
+    uart_set_format(uart0, 8, 1, c.UART_PARITY_NONE);
+    uart_set_hw_flow(uart0, false, false);
 
     // Install and register UART0 IRQ handlers for received data.
     c.irq_set_exclusive_handler(c.UART0_IRQ, uart0RxIrq);
     c.irq_set_enabled(c.UART0_IRQ, true);
-    uart_set_irq_enables(uart0(), true, false);
+    uart_set_irq_enables(uart0, true, false);
 }
 
 /// Get most recent data packet from the TF Luna, or null if none available.
@@ -145,7 +148,7 @@ fn uart0RxIrq() callconv(.C) void {
     // compared to the delay of not having a valid header for ~10ms (according to refresh rate.)
     // So, we just use a FIFO queue and let ourselves at the mercy of however the UART is configured
     // in terms of its level.
-    while (c.uart_is_readable(uart0())) {
+    while (c.uart_is_readable(uart0)) {
         // Throw out the previous data packet if we've accomplished the nigh-impossible task
         // of having more bytes in the FIFO queue than we expected
         if (current_luna_byte >= @sizeOf(TfLunaStandard9Cm)) {
@@ -154,16 +157,9 @@ fn uart0RxIrq() callconv(.C) void {
 
         // Perform a blocking read even though we know data is present.
         // Note that getchar has the same behavior.
-        c.uart_read_blocking(uart0(), &current_luna_data.bytes[current_luna_byte], @sizeOf(u8));
+        c.uart_read_blocking(uart0, &current_luna_data.bytes[current_luna_byte], @sizeOf(u8));
         current_luna_byte += 1;
     }
-}
-
-/// Get uart0 as would be done with the C macro which can't be translated.
-fn uart0() callconv(.Inline) *c.uart_inst_t {
-    // Where uart0 eventually translates to this address. May break if a different board is used.
-    // The only fix here is to either change zig translate-c or to make a C function that returns the address.
-    return @intToPtr(*c.uart_inst_t, 0x40034000);
 }
 
 // The following are macros translated into Zig with small fixes which translate-c couldn't handle
