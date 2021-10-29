@@ -67,7 +67,7 @@ pub fn initLogger() void {
 }
 
 /// Whether or not there are potential stdio listeners.
-const stdio_enabled = (@hasDecl(c, "LIB_PICO_STDIO_UART") and c.LIB_PICO_STDIO_UART == 1) 
+pub const stdio_enabled = (@hasDecl(c, "LIB_PICO_STDIO_UART") and c.LIB_PICO_STDIO_UART == 1) 
     or (@hasDecl(c, "LIB_PICO_STDIO_USB") and c.LIB_PICO_STDIO_USB == 1)
     or (@hasDecl(c, "LIB_PICO_STDIO_SEMIHOSTING") and c.LIB_PICO_STDIO_SEMIHOSTING == 1);
 

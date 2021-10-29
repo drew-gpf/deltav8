@@ -19,6 +19,7 @@ const std = @import("std");
 const logger = @import("logger.zig");
 const uart = @import("uart.zig");
 const intrin = @import("intrin.zig");
+const clock = @import("clock.zig");
 
 const c = @cImport({
     @cInclude("pico/stdlib.h");
@@ -27,7 +28,7 @@ const c = @cImport({
 // Uncomment or change to enable logs for any build mode
 //pub const log_level: std.log.Level = .debug;
 
-// Generic log handler. All logs must go to this routine; no logging is done if the binary was not built with stdio enabled.
+/// stdlib log handler; no logging is done if stdio is disabled.
 pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral), comptime format: []const u8, args: anytype) void {
     _ = scope;
 
@@ -36,28 +37,24 @@ pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral),
 }
 
 export fn main() void {
-    logger.initLogger();
+    // Configure system clocks to save power. This must be updated if the RTC or ADC are used,
+    // or if USB is used outside of stdio.
+    clock.configureClocks();
 
-    // Init UART0 and associated IRQs so we can get data from the TF Luna
+    logger.initLogger();
     uart.init();
 
-    // Main event loop; wait for next data packet
     while (true) {
         // Prevent race conditions by masking IRQs; assumes that IRQs are unmasked at this point
         intrin.cpsidi();
 
-        // Try to get the TF Luna packet. This might not be valid if:
-        // - This is the first iteration
-        // - We received an unrelated IRQ (e.g. USB serial alarm)
-        // - The UART FIFO queue triggered an IRQ but the level is set such that we still have more bytes to read
+        // Try to get the TF Luna packet, this is not guaranteed to return data.
         const next_luna_opt = uart.getNextLuna();
 
-        // Wait for next IRQ with IRQs masked to prevent the RX IRQ from getting ignored.
-        // In practice this will sleep until the next UART IRQ unless USB serial output is enabled.
+        // Wait for next IRQ with IRQs masked to prevent the RX IRQ from getting ignored
         intrin.wfi();
         intrin.cpsiei();
 
-        // Note that it's entirely possible this log is so slow that we end up skipping packets
         if (next_luna_opt) |luna| {
             std.log.debug("Got UART. Is valid: {}, dist: {}, temp: {} Celcius, strength: {}", .{
                 luna.isHeaderValid(), luna.getValidDist(), luna.getTemp(), luna.fields.strength

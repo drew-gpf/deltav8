@@ -21,6 +21,7 @@ const intrin = @import("intrin.zig");
 const c = @cImport({
     @cInclude("hardware/irq.h");
     @cInclude("hardware/uart.h");
+    @cInclude("hardware/clocks.h");
     @cInclude("pico/stdlib.h");
     @cInclude("pico/sync.h");
 });
@@ -102,33 +103,36 @@ var current_luna_byte: usize = 0;
 /// UART0: TF Luna, 115200 baud rate, 8 data bits, 1 stop bit, no parity check, GPIO0 is TX, GPIO1 is RX
 /// UART1: uninitialized
 /// Additionally this will install an IRQ handler for UART0 on the current core.
-/// We use an IRQ for the TF Luna as its refresh rate (up to 250Hz) is horrifyingly slow
-/// and thus we stand to save some power by waiting for the next IRQ instead of constantly blocking.
 pub fn init() void {
-    // Init the TF Luna UART
+    // Init TF Luna UART
     _ = c.uart_init(uart0, 115200);
 
-    // Designate GPIO pins. Practically this enforces how the system is wired.
+    // Use GPIO 0, 1 for UART0
     c.gpio_set_function(0, c.GPIO_FUNC_UART);
     c.gpio_set_function(1, c.GPIO_FUNC_UART);
 
-    // Configure the TF Luna UART
+    // Configure UART interface
     uart_set_format(uart0, 8, 1, c.UART_PARITY_NONE);
     uart_set_hw_flow(uart0, false, false);
 
-    // Install and register UART0 IRQ handlers for received data.
+    // Install IRQ handler
     c.irq_set_exclusive_handler(c.UART0_IRQ, uart0RxIrq);
     c.irq_set_enabled(c.UART0_IRQ, true);
     uart_set_irq_enables(uart0, true, false);
 }
 
+/// Get SLEEP_ENX bits required for UART functionality when sleeping.
+pub fn getUartSleepEn() u64 {
+    // THE PICO SDK USES MACROS FOR NO REASON THAT BREAK TRANSLATE-C
+    const CLOCKS_SLEEP_EN1_CLK_SYS_UART0_BITS = 0x00000080;
+    const CLOCKS_SLEEP_EN1_CLK_PERI_UART0_BITS = 0x00000040;
+
+    return (0) | ((CLOCKS_SLEEP_EN1_CLK_SYS_UART0_BITS | CLOCKS_SLEEP_EN1_CLK_PERI_UART0_BITS) << 32);
+}
+
 /// Get most recent data packet from the TF Luna, or null if none available.
 /// Interrupts must be disabled when entering with function to avoid race conditions.
-/// In the resulting idle loop, it is wise to WFI with IRQs disabled to prevent accidental FIFO overruns
-/// where entire packets are thrown out due to being unable to respond to their resulting IRQs.
-/// After WFI resumes, enable interrupts to recognize the IRQ.
 pub fn getNextLuna() ?TfLunaStandard9Cm {
-    // If data is valid, return it; also make sure (if needed) that we haven't overwritten bytes.
     if (current_luna_byte == @sizeOf(TfLunaStandard9Cm)) {
         current_luna_byte = 0;
         return current_luna_data;
@@ -141,13 +145,6 @@ pub fn getNextLuna() ?TfLunaStandard9Cm {
 /// RX IRQ for the UART0; fired when some amount of data has been filled in the UART's FIFO queue.
 fn uart0RxIrq() callconv(.C) void {
     // Get all bytes in the FIFO queue.
-    // If we are about to overwrite bytes, throw out the previous header to avoid
-    // an overrun in the FIFO queue.
-    // Note that this is also compatible without the FIFO queue at the cost of potential data loss.
-    // With a FIFO queue we still run into a potential latency issue of ~<=.4ms which probably isn't as bad
-    // compared to the delay of not having a valid header for ~10ms (according to refresh rate.)
-    // So, we just use a FIFO queue and let ourselves at the mercy of however the UART is configured
-    // in terms of its level.
     while (c.uart_is_readable(uart0)) {
         // Throw out the previous data packet if we've accomplished the nigh-impossible task
         // of having more bytes in the FIFO queue than we expected
@@ -155,8 +152,7 @@ fn uart0RxIrq() callconv(.C) void {
             current_luna_byte = 0;
         }
 
-        // Perform a blocking read even though we know data is present.
-        // Note that getchar has the same behavior.
+        // Perform a "blocking" read. todo: read from uart manually
         c.uart_read_blocking(uart0, &current_luna_data.bytes[current_luna_byte], @sizeOf(u8));
         current_luna_byte += 1;
     }
