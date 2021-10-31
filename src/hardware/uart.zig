@@ -39,7 +39,7 @@ pub fn UartInst(comptime reg_base: usize) type {
         fn writeFn(_: void, bytes: []const u8) WriteError!usize {
             for (bytes) |byte| {
                 while (!Self.isWritable()) asm volatile ("" ::: "memory");
-                Self.hw.dr = byte;
+                Self.writeByte(byte);
             }
 
             return bytes.len;
@@ -51,7 +51,7 @@ pub fn UartInst(comptime reg_base: usize) type {
         fn readFn(_: void, bytes: []u8) ReadError!usize {
             for (bytes) |*byte| {
                 while (!Self.isReadable()) asm volatile ("" ::: "memory");
-                byte.* = @truncate(u8, Self.hw.dr);
+                byte.* = Self.readByte();
             }
 
             return bytes.len;
