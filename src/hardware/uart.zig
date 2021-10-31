@@ -169,7 +169,7 @@ pub fn UartInst(comptime reg_base: usize) type {
         }
 
         /// Write a single byte to the UART TX without blocking.
-        /// This is unsafe if not called within the relevant IRQ.
+        /// This is unsafe if not called after knowing that the FIFO queue is writable.
         pub fn writeByte(val: u8) callconv(.Inline) void {
             Self.hw.dr = val;
         }
@@ -180,7 +180,7 @@ pub fn UartInst(comptime reg_base: usize) type {
         }
 
         /// Read a single byte from the UART RX without blocking.
-        /// This is unsafe if not called within the relevant IRQ.
+        /// This is unsafe if not called after knowing that there is data in the FIFO queue.
         pub fn readByte() callconv(.Inline) u8 {
             return @truncate(u8, Self.hw.dr);
         }
