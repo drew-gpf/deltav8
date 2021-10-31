@@ -24,6 +24,9 @@ const std = @import("std");
 const mmio = @import("mmio.zig");
 
 pub fn UartInst(comptime reg_base: usize) type {
+    // Note: the SDK uses some macro garbage that breaks translate-c for every single constant
+    // so instead their magic numbers are used. Look up the corresponding function
+    // in the SDK to see implementation.
     return struct {
         pub const hw = @intToPtr(*volatile c.uart_hw_t, reg_base);
         pub const inst = @intToPtr(*c.uart_inst_t, reg_base);
@@ -133,26 +136,26 @@ pub fn UartInst(comptime reg_base: usize) type {
 
         /// Get whether or not a uart is enabled.
         pub fn isEnabled() callconv(.Inline) bool {
-            return (Self.hw.cr & c.UART_UARTCR_UARTEN_BITS) != 0;
+            return (Self.hw.cr & 0x00000001) != 0;
         }
 
         /// Enable or disable the FIFO for a uart. By default the FIFO will be enabled.
         pub fn toggleFifo(enable_fifo: bool) callconv(.Inline) void {
             mmio.setRegBits(
                 &Self.hw.lcr_h,
-                @as(usize, @boolToInt(enable_fifo)) << c.UART_UARTLCR_H_FEN_LSB,
-                c.UART_UARTLCR_H_FEN_BITS
+                @as(usize, @boolToInt(enable_fifo)) << 4,
+                0x00000010
             );
         }
 
         /// Get whether or not there is space in the TX FIFO for a uart
         pub fn isWritable() callconv(.Inline) bool {
-            return (Self.hw.fr & c.UART_UARTFR_TXFF_BITS) == 0;
+            return (Self.hw.fr & 0x00000020) == 0;
         }
 
         /// Block until the TX FIFO queue is empty
         pub fn waitTx() callconv(.Inline) void {
-            while ((Self.hw.fr & c.UART_UARTFR_BUSY_BITS) != 0) asm volatile ("" ::: "memory");
+            while ((Self.hw.fr & 0x00000008) != 0) asm volatile ("" ::: "memory");
         }
 
         /// Get whether or not there is data in the RX FIFO queue
@@ -185,9 +188,9 @@ pub fn UartInst(comptime reg_base: usize) type {
         /// If enable is true, assert a break condition (TX held low). Clear it otherwise.
         pub fn toggleBreak(enable: bool) callconv(.Inline) void {
             if (enable) {
-                mmio.orReg(&Self.hw.lcr_h, c.UART_UARTLCR_H_BRK_BITS);
+                mmio.orReg(&Self.hw.lcr_h, 0x00000001);
             } else {
-                mmio.andNotReg(&Self.hw.lcr_h, c.UART_UARTLCR_H_BRK_BITS);
+                mmio.andNotReg(&Self.hw.lcr_h, 0x00000001);
             }
         }
 
