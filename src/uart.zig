@@ -17,13 +17,13 @@
 
 const std = @import("std");
 const intrin = @import("intrin.zig");
+const uart = @import("hardware/uart.zig");
+
+const uart0 = uart.uart0;
 
 const c = @cImport({
     @cInclude("hardware/irq.h");
-    @cInclude("hardware/uart.h");
-    @cInclude("hardware/clocks.h");
     @cInclude("pico/stdlib.h");
-    @cInclude("pico/sync.h");
 });
 
 pub const TfLunaStandard9Cm = extern union {
@@ -88,9 +88,6 @@ comptime {
         @compileLog("Invalid size of fields, bytes; must be 9 bytes", @sizeOf(fields_type), @sizeOf(bytes_type));
 }
 
-/// uart0 pointer from the SDK. This must be done here as the relevant macro can't be translated.
-pub const uart0 = @intToPtr(*c.uart_inst_t, 0x40034000);
-
 /// The current data package read from the previous IRQ.
 var current_luna_data: TfLunaStandard9Cm = undefined;
 
@@ -104,21 +101,25 @@ var current_luna_byte: usize = 0;
 /// UART1: uninitialized
 /// Additionally this will install an IRQ handler for UART0 on the current core.
 pub fn init() void {
+    const baud_rate = 115200;
+
     // Init TF Luna UART
-    _ = c.uart_init(uart0, 115200);
+    std.debug.assert(uart0.init(baud_rate) == baud_rate);
 
     // Use GPIO 0, 1 for UART0
     c.gpio_set_function(0, c.GPIO_FUNC_UART);
     c.gpio_set_function(1, c.GPIO_FUNC_UART);
 
     // Configure UART interface
-    uart_set_format(uart0, 8, 1, c.UART_PARITY_NONE);
-    uart_set_hw_flow(uart0, false, false);
+    uart0.setFormat(8, 1, .none);
+    uart0.setHwFlow(false, false);
 
-    // Install IRQ handler
+    // Install IRQ handler. We trigger an IRQ when the RX FIFO has 12 bytes.
+    // In practice it will wait for all 9 bytes to be received and then wait the amount of time
+    // taken to receive another 4 bytes.
     c.irq_set_exclusive_handler(c.UART0_IRQ, uart0RxIrq);
     c.irq_set_enabled(c.UART0_IRQ, true);
-    uart_set_irq_enables(uart0, true, false);
+    uart0.enableIrqFor(.three_quarters, null);
 }
 
 /// Get SLEEP_ENX bits required for UART functionality when sleeping.
@@ -142,54 +143,18 @@ pub fn getNextLuna() ?TfLunaStandard9Cm {
     return null;
 }
 
-/// RX IRQ for the UART0; fired when some amount of data has been filled in the UART's FIFO queue.
+/// RX IRQ for the UART0. The level is set to 12 bytes,
+/// but in most or all cases this should fire when there are only 9 bytes in the header.
 fn uart0RxIrq() callconv(.C) void {
     // Get all bytes in the FIFO queue.
-    while (c.uart_is_readable(uart0)) {
+    while (uart0.isReadable()) {
         // Throw out the previous data packet if we've accomplished the nigh-impossible task
         // of having more bytes in the FIFO queue than we expected
         if (current_luna_byte >= @sizeOf(TfLunaStandard9Cm)) {
             current_luna_byte = 0;
         }
 
-        // Perform a "blocking" read. todo: read from uart manually
-        c.uart_read_blocking(uart0, &current_luna_data.bytes[current_luna_byte], @sizeOf(u8));
+        current_luna_data.bytes[current_luna_byte] = uart0.readByte();
         current_luna_byte += 1;
-    }
-}
-
-// The following are macros translated into Zig with small fixes which translate-c couldn't handle
-// likely due to them abusing UB.
-// Note that these macros may or may not break if the board configuration changes,
-// where the only fix would be to change zig translate-c or to export these from C.
-
-fn uart_set_hw_flow(arg_uart: *c.uart_inst_t, arg_cts: bool, arg_rts: bool) callconv(.C) void {
-    var uart = arg_uart;
-    var cts = arg_cts;
-    var rts = arg_rts;
-    c.hw_write_masked(&c.uart_get_hw(uart).*.cr, (@as(c_uint, @boolToInt(!!cts)) << @intCast(@import("std").math.Log2Int(c_uint), 15)) | (@as(c_uint, @boolToInt(!!rts)) << @intCast(@import("std").math.Log2Int(c_uint), 14)), @as(c_uint, 16384) | @as(c_uint, 32768));
-}
-
-fn uart_set_format(arg_uart: *c.uart_inst_t, arg_data_bits: c_uint, arg_stop_bits: c_uint, arg_parity: c.uart_parity_t) callconv(.C) void {
-    var uart = arg_uart;
-    var data_bits = arg_data_bits;
-    var stop_bits = arg_stop_bits;
-    var parity = arg_parity;
-    std.debug.assert(data_bits >= 5 and data_bits <= 8);
-    std.debug.assert(stop_bits == 1 or stop_bits == 2);
-    std.debug.assert(parity == c.UART_PARITY_NONE or parity == c.UART_PARITY_ODD or parity == c.UART_PARITY_EVEN);
-    c.hw_write_masked(&c.uart_get_hw(uart).*.lcr_h, ((((data_bits -% @as(c_uint, 5)) << @intCast(@import("std").math.Log2Int(c_uint), 5)) | ((stop_bits -% @as(c_uint, 1)) << @intCast(@import("std").math.Log2Int(c_uint), 3))) | (@as(c_uint, @boolToInt(!!(parity != @bitCast(c_uint, c.UART_PARITY_NONE)))) << @intCast(@import("std").math.Log2Int(c_uint), 1))) | (@as(c_uint, @boolToInt(!!(parity == @bitCast(c_uint, c.UART_PARITY_EVEN)))) << @intCast(@import("std").math.Log2Int(c_uint), 2)), ((@as(c_uint, 96) | @as(c_uint, 8)) | @as(c_uint, 2)) | @as(c_uint, 4));
-}
-
-fn uart_set_irq_enables(arg_uart: *c.uart_inst_t, arg_rx_has_data: bool, arg_tx_needs_data: bool) callconv(.C) void {
-    var uart = arg_uart;
-    var rx_has_data = arg_rx_has_data;
-    var tx_needs_data = arg_tx_needs_data;
-    c.uart_get_hw(uart).*.imsc = (@as(c_uint, @boolToInt(!!tx_needs_data)) << @intCast(@import("std").math.Log2Int(c_uint), 5)) | (@as(c_uint, @boolToInt(!!rx_has_data)) << @intCast(@import("std").math.Log2Int(c_uint), 4));
-    if (rx_has_data) {
-        c.hw_write_masked(&c.uart_get_hw(uart).*.ifls, @bitCast(u32, @as(c_int, 0) << @intCast(@import("std").math.Log2Int(c_int), 3)), @as(c_uint, 56));
-    }
-    if (tx_needs_data) {
-        c.hw_write_masked(&c.uart_get_hw(uart).*.ifls, @bitCast(u32, @as(c_int, 0) << @intCast(@import("std").math.Log2Int(c_int), 0)), @as(c_uint, 7));
     }
 }
