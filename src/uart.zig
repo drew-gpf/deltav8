@@ -28,41 +28,40 @@ const c = @cImport({
 const luna_uart = uart.uart0;
 const luna_irq = c.UART0_IRQ;
 
-pub const TfLunaStandard9Cm = extern union {
+pub const TfLunaPacket = extern union {
     /// Magic number for header field
-    pub const header_magic: u16 = 0x5959;
-
-    /// Maximum distance, in centimeters, that the sensor is able to report.
-    pub const max_dist: u16 = 1200;
+    pub const header_magic: u8 = 0x59;
 
     fields: packed struct {
         /// Header, must be equal to header_magic.
-        header: u16,
+        header: u8,
 
-        /// Distance, in centimeters, to nearest target. Must be between 0-1200. If outside that range,
-        /// the signal strength is probably less than 100 and the value is -1.
+        /// Length of packet; must be equal to the size of this packet.
+        len: u8,
+
+        /// A byte always equal to zero.
+        zero: u8,
+
+        /// Distance, in centimeters, to nearest target.
         dist: u16,
         
-        /// Signal strength, higher is better.
+        /// Signal strength, higher is better. Distance is invalid if equal to 65535 or is less than 100.
         strength: u16,
 
-        /// Ranged temperature. Degrees C = (this / 8) - 256.
-        temperature: u16,
+        /// Current time in milliseconds
+        timestamp: u32,
 
         /// Cumulative sum of all fields before it.
         checksum: u8
     },
-    bytes: [9]u8,
+    bytes: [12]u8,
 
     /// Whether or not the struct's header is valid i.e. whether or not the data should be interpreted.
-    pub fn isHeaderValid(this: *const TfLunaStandard9Cm) bool {
-        if (this.fields.header != header_magic)
-            return false;
-
-        // Compute a simple wrapping checksum of the first 8 bytes i.e. before the checksum byte
+    pub fn isHeaderValid(this: *const TfLunaPacket) bool {
+        // Compute a simple wrapping checksum of the first 11 bytes i.e. before the checksum byte
         var checksum: u8 = 0;
 
-        for (this.bytes[0..8]) |byte| {
+        for (this.bytes[0..this.bytes.len-1]) |byte| {
             checksum +%= byte;
         }
 
@@ -70,32 +69,25 @@ pub const TfLunaStandard9Cm = extern union {
     }
 
     /// Get the distance value, or null if it's invalid.
-    pub fn getValidDist(this: *const TfLunaStandard9Cm) ?u16 {
-        return if (this.fields.dist <= max_dist) this.fields.dist else null;
-    }
-
-    /// Get the temperature of the device, in degrees celcius.
-    pub fn getTemp(this: *const TfLunaStandard9Cm) u16 {
-        return (this.fields.temperature / 8) - 256;
+    pub fn getValidDist(this: *const TfLunaPacket) ?u16 {
+        return if (this.fields.strength >= 100 and this.fields.strength != 65535) this.fields.dist else null;
     }
 };
 
 comptime {
-    const fields = std.meta.fields(TfLunaStandard9Cm);
+    const fields = std.meta.fields(TfLunaPacket);
 
-    const bytes_type = fields[std.meta.fieldIndex(TfLunaStandard9Cm, "bytes") orelse unreachable].field_type;
-    const fields_type = fields[std.meta.fieldIndex(TfLunaStandard9Cm, "fields") orelse unreachable].field_type;
+    const bytes_type = fields[std.meta.fieldIndex(TfLunaPacket, "bytes") orelse unreachable].field_type;
+    const fields_type = fields[std.meta.fieldIndex(TfLunaPacket, "fields") orelse unreachable].field_type;
 
-    if (@sizeOf(fields_type) != @sizeOf(bytes_type) or @sizeOf(fields_type) != 9)
-        @compileLog("Invalid size of fields, bytes; must be 9 bytes", @sizeOf(fields_type), @sizeOf(bytes_type));
+    if (@sizeOf(fields_type) != @sizeOf(bytes_type) or @sizeOf(fields_type) != 12)
+        @compileLog("Invalid size of fields, bytes; must be 11 bytes", @sizeOf(fields_type), @sizeOf(bytes_type));
 }
 
 /// The current data package read from the previous IRQ.
-var current_luna_data: TfLunaStandard9Cm = undefined;
+var current_luna_data: TfLunaPacket = undefined;
 
-/// The current byte read within current_luna_data. When equal to @sizeOf(TfLunaStandard9Cm), all data within the buffer is valid;
-/// otherwise, the data is incomplete or stale.
-/// This must not be greater than @sizeOf(TfLunaStandard9Cm) i.e. 9 bytes
+/// The index of the first invalid byte of current_luna_data.
 var current_luna_byte: usize = 0;
 
 /// Init required UART devices.
@@ -115,36 +107,28 @@ pub fn init() void {
     // Configure UART interface
     luna_uart.setFormat(8, 1, .none);
     luna_uart.setHwFlow(false, false);
-    //luna_uart.toggleFifo(false);
 
-    // Get firmware ver.
-    //var command = [_]u8{ 0x5A, 0x04, 0x01, 0x00 };
+    // Disable data output temporarily to avoid collision with response checking
+    toggleOutput(false) catch {};
 
-    //for (command[0..3]) |byte| {
-        //command[3] +%= byte;
-    //}
+    // Set the sensor to a known state. We configure it to use a 12 byte header which allows each packet to
+    // trigger an RX IRQ without waiting.
+    enableChecksum() catch |e| fatalError("Failed to enable checksum mode: {}", .{ e });
+    setOutputFmt(.id_0) catch |e| fatalError("Failed to set output mode: {}", .{ e });
 
-    //const writer = luna_uart.getWriter();
+    const freq = setOutputFreq(100) catch |e| fatalError("Failed to set output frequency: {}", .{ e });
+    if (freq != 100) {
+        fatalError("Invalid set freq {}", .{ freq });
+    }
 
-    //_ = writer.write(command[0..]) catch unreachable;
-    //luna_uart.waitTx();
-    //c.gpio_put(25, true);
+    // Re-enable output before installing an IRQ handler to not confuse the UART
+    toggleOutput(true) catch {};
 
-    //var response: [7]u8 = undefined;
-
-    //const reader = luna_uart.getReader();
-   // _ = reader.read(response[0..]) catch unreachable;
-    //c.gpio_put(25, false);
-
-    //std.log.debug("Header: 0x{X}\nVersion {}.{}.{}", .{ response[0], response[5], response[4], response[3] });
-    //std.log.debug("response: 0x{X}, 0x{X}", .{ response[3], response[4] });
-
-    // Install IRQ handler. We trigger an IRQ when the RX FIFO has 12 bytes.
-    // In practice it will wait for all 9 bytes to be received and then wait the amount of time
-    // taken to receive another 4 bytes.
-    //c.irq_set_exclusive_handler(luna_irq, lunaUartRxIrq);
-    //c.irq_set_enabled(luna_irq, true);
-    //luna_uart.enableIrqFor(.three_quarters, null);
+    // Install IRQ handler. We trigger an IRQ when the RX FIFO has 12 bytes, which is the size
+    // of the header we will receive.
+    c.irq_set_exclusive_handler(luna_irq, lunaUartRxIrq);
+    c.irq_set_enabled(luna_irq, true);
+    luna_uart.enableIrqFor(.three_quarters, null);
 }
 
 /// Get SLEEP_ENX bits required for UART functionality when sleeping.
@@ -158,28 +142,176 @@ pub fn getUartSleepEn() u64 {
 
 /// Get most recent data packet from the TF Luna, or null if none available.
 /// Interrupts must be disabled when entering with function to avoid race conditions.
-pub fn getNextLuna() ?TfLunaStandard9Cm {
-    if (current_luna_byte == @sizeOf(TfLunaStandard9Cm)) {
+pub fn getNextLuna() callconv(.Inline) ?TfLunaPacket {
+    if (current_luna_byte == @sizeOf(TfLunaPacket)) {
         current_luna_byte = 0;
         return current_luna_data;
     }
 
-    std.debug.assert(current_luna_byte < @sizeOf(TfLunaStandard9Cm));
+    std.debug.assert(current_luna_byte < @sizeOf(TfLunaPacket));
     return null;
 }
 
-/// RX IRQ for the luna UART. The level is set to 12 bytes,
-/// but in most or all cases this should fire when there are only 9 bytes in the header.
+/// Enable checksum verification of transmitted data
+fn enableChecksum() callconv(.Inline) !void {
+    var cmd_out: [5]u8 = undefined;
+    try sendCmd(8, &[_]u8{ 1 }, cmd_out[0..]);
+}
+
+/// Change output format
+fn setOutputFmt(fmt: OutputFmt) callconv(.Inline) !void {
+    var cmd_out: [5]u8 = undefined;
+    try sendCmd(5, &[_]u8{ @enumToInt(fmt) }, cmd_out[0..]);
+}
+
+const OutputFmt = enum(u8) {
+    /// Standard 9-byte header with cm measurement
+    nine_byte_cm = 1,
+
+    /// String-formatted dist val
+    pix,
+
+    /// Standard 9-byte header with mm measurement
+    nine_byte_mm = 6,
+
+    /// 11-byte header with 4-byte timestamp
+    eleven_byte_timestamp,
+
+    /// 12-byte header with extra len byte
+    id_0,
+
+    /// 8-byte header with cm measurement
+    eight_byte_cm
+};
+
+/// Reset saved settings
+fn reset() callconv(.Inline) !void {
+    var cmd_out: [5]u8 = undefined;
+    try sendCmd(0x10, null, cmd_out[0..]);
+
+    if (cmd_out[3] != 0) return error.ResetFailed;
+}
+
+/// Save current settings
+fn save() callconv(.Inline) !void {
+    var cmd_out: [5]u8 = undefined;
+    try sendCmd(0x11, null, cmd_out[0..]);
+
+    if (cmd_out[3] != 0) return error.SaveFailed;
+}
+
+/// Set a new output frequency; returns actual set frequency
+fn setOutputFreq(freq: u16) callconv(.Inline) !u16 {
+    var cmd_out: [7]u8 align(@alignOf(u16)) = undefined;
+    try sendCmd(3, @ptrCast(*const [2]u8, &freq), cmd_out[1..]);
+
+    // Offset cmd_out by 1 byte so we can read an aligned u16
+    return @ptrCast(*u16, &cmd_out[3+1]).*;
+}
+
+/// Toggle data output.
+fn toggleOutput(enable: bool) callconv(.Inline) !void {
+    var cmd_out: [5]u8 = undefined;
+    try sendCmd(7, &[_]u8{ @boolToInt(enable) }, cmd_out[0..]);
+}
+
+/// Send a command and wait for a response.
+/// cmd_out dictates the length of the response. cmd_data should not contain the checksum byte.
+/// This function returns an error if cmd_out's checksum is invalid.
+/// Note that an invalid length for cmd_out will result in a hang or for the next read to return garbage data.
+/// This function automatically builds the command length byte. which_cmd selects the command,
+/// and cmd_data contains the data to send. If cmd_data is null, then no data is sent.
+fn sendCmd(which_cmd: u8, cmd_data: ?[]const u8, cmd_out: []u8) callconv(.Inline) !void {
+    // Flush RX FIFO queue
+    while (luna_uart.isReadable()) _ = luna_uart.readByte();
+
+    const writer = luna_uart.getWriter();
+    const reader = luna_uart.getReader();
+
+    const header: u8 = 0x5A;
+    const len: u8 = if (cmd_data) |data| blk: {
+        break :blk @intCast(u8, data.len) + 4;
+    } else 4;
+
+    const checksum = blk: {
+        var temp: u8 = header +% len +% which_cmd;
+
+        if (cmd_data) |cmd| {
+            for (cmd) |byte| {
+                temp +%= byte;
+            }
+        }
+
+        break :blk temp;
+    };
+
+    // Write command then checksum. This will unroll to an equivalent sequence of a full command.
+    // Because we always at least send 4 bytes we configure len to be cmd_data.len + 4 or just 4.
+    _ = writer.writeByte(header) catch unreachable;
+    _ = writer.writeByte(len) catch unreachable;
+    _ = writer.writeByte(which_cmd) catch unreachable;
+    if (cmd_data) |cmd| _ = writer.write(cmd[0..]) catch unreachable;
+    _ = writer.writeByte(checksum) catch unreachable;
+
+    // Wait for data to be sent
+    luna_uart.waitTx();
+
+    const S = struct {
+        var read_first_byte: bool = false;
+    };
+
+    if (!S.read_first_byte) {
+        S.read_first_byte = true;
+        const first = reader.readByte() catch unreachable;
+
+        if (first != 0xFF) {
+            _ = reader.read(cmd_out[1..]) catch unreachable;
+            cmd_out[0] = first;
+        } else {
+            _ = reader.read(cmd_out[0..]) catch unreachable;
+        }
+    } else {
+        _ = reader.read(cmd_out[0..]) catch unreachable;
+    }
+
+    var out_checksum: u8 = 0;
+
+    for (cmd_out[0..cmd_out.len-1]) |byte| {
+        out_checksum +%= byte;
+    }
+
+    if (out_checksum != cmd_out[cmd_out.len-1]) {
+        std.log.warn("invalid checksum {} vs reported {}\nout bytes:", .{ out_checksum, cmd_out[cmd_out.len-1] });
+
+        for (cmd_out) |byte| {
+            std.log.warn("0x{X}", .{byte});
+        }
+
+        return error.InvalidChecksum;
+    }
+}
+
+/// RX IRQ for the luna UART. Because the level is set to 12 bytes and we will always
+/// receive a 12 byte packet, this should only fire when the header is complete or needs to be overwritten.
 fn lunaUartRxIrq() callconv(.C) void {
-    // Get all bytes in the FIFO queue.
-    while (luna_uart.isReadable()) {
-        // Throw out the previous data packet if we've accomplished the nigh-impossible task
-        // of having more bytes in the FIFO queue than we expected
-        if (current_luna_byte >= @sizeOf(TfLunaStandard9Cm)) {
+    const luna_header_size = @sizeOf(TfLunaPacket);
+
+    while (luna_uart.isReadable()) : (current_luna_byte += 1) {
+        if (current_luna_byte == luna_header_size) {
             current_luna_byte = 0;
         }
 
         current_luna_data.bytes[current_luna_byte] = luna_uart.readByte();
-        current_luna_byte += 1;
     }
+}
+
+fn fatalError(comptime reason: []const u8, args: anytype) callconv(.Inline) noreturn {
+    std.log.warn(reason, args);
+
+    // Flash the LED
+    c.gpio_init(c.PICO_DEFAULT_LED_PIN);
+    c.gpio_set_dir(c.PICO_DEFAULT_LED_PIN, true);
+    c.gpio_put(c.PICO_DEFAULT_LED_PIN, true);
+
+    while (true) {}
 }
