@@ -18,6 +18,7 @@
 const std = @import("std");
 const logger = @import("logger.zig");
 const uart = @import("uart.zig");
+const uart_hw = @import("hardware/uart.zig");
 const intrin = @import("intrin.zig");
 const clock = @import("clock.zig");
 
@@ -26,7 +27,7 @@ const c = @cImport({
 });
 
 // Uncomment or change to enable logs for any build mode
-//pub const log_level: std.log.Level = .debug;
+pub const log_level: std.log.Level = .debug;
 
 /// stdlib log handler; no logging is done if stdio is disabled.
 pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral), comptime format: []const u8, args: anytype) void {
@@ -37,28 +38,47 @@ pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral),
 }
 
 export fn main() void {
+
     // Configure system clocks to save power. This must be updated if the RTC or ADC are used,
     // or if USB is used outside of stdio.
-    clock.configureClocks();
+    //clock.configureClocks();
 
     logger.initLogger();
+    //c.sleep_ms(5000);
+
+    c.gpio_init(25);
+    c.gpio_set_dir(25, true);
+    c.gpio_put(25, true);
+
     uart.init();
 
-    while (true) {
+    var i: usize = 0;
+
+    while (true) : (i += 1) {
+        //var bytes: [9]u8 align(@sizeOf(u16)) = undefined;
+        //_ = uart_hw.uart0.getReader().read(bytes[0..]) catch unreachable;
+
+        //std.log.debug("0x{X}", .{ @ptrCast(*u16, &bytes[0]).* });
+        std.log.debug("0x{X}", .{c.uart_getc(@ptrCast(*c.uart_inst_t, uart_hw.uart0.getInst()))});
+
         // Prevent race conditions by masking IRQs; assumes that IRQs are unmasked at this point
-        intrin.cpsidi();
+        //intrin.cpsidi();
 
         // Try to get the TF Luna packet, this is not guaranteed to return data.
-        const next_luna_opt = uart.getNextLuna();
+        //const next_luna_opt = uart.getNextLuna();
 
         // Wait for next IRQ with IRQs masked to prevent the RX IRQ from getting ignored
-        intrin.wfi();
-        intrin.cpsiei();
+        //intrin.wfi();
+        //intrin.cpsiei();
 
-        if (next_luna_opt) |luna| {
-            std.log.debug("Got UART. Is valid: {}, dist: {}, temp: {} Celcius, strength: {}", .{
-                luna.isHeaderValid(), luna.getValidDist(), luna.getTemp(), luna.fields.strength
-            }); 
+        //if (next_luna_opt) |luna| {
+            //std.log.debug("Got UART. Is valid: {}, dist: {}, temp: {} Celcius, strength: {}", .{
+                //luna.isHeaderValid(), luna.getValidDist(), luna.getTemp(), luna.fields.strength
+            //}); 
+        //}
+
+        if (i % 1000 == 0) {
+            c.gpio_xor_mask(1 << 25);
         }
     }
 }

@@ -151,19 +151,19 @@ pub const Uart = extern struct {
         );
     }
 
-    /// Get whether or not there is space in the TX FIFO for a uart
+    /// Get whether or not there is space in the TX FIFO queue
     pub fn isWritable(this: SelfPtr) callconv(.Inline) bool {
-        return (this.hw.fr & 0x00000020) == 0;
+        return (this.hw.fr & (1 << 5)) == 0;
     }
 
     /// Block until the TX FIFO queue is empty
     pub fn waitTx(this: SelfPtr) callconv(.Inline) void {
-        while ((this.hw.fr & 0x00000008) != 0) asm volatile ("" ::: "memory");
+        while ((this.hw.fr & (1 << 3)) != 0) asm volatile ("" ::: "memory");
     }
 
     /// Get whether or not there is data in the RX FIFO queue
     pub fn isReadable(this: SelfPtr) callconv(.Inline) bool {
-        return (this.hw.fr & 0x00000010) == 0;
+        return (this.hw.fr & (1 << 4)) == 0;
     }
 
     /// Get a blocking writer for this UART

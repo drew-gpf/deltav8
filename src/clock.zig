@@ -49,12 +49,12 @@ pub fn configureClocks() void {
         // also rely on.
         c.clock_stop(c.clk_usb);
         c.pll_deinit(pll_usb);
+
+        // Currently we only use UART so as that subsystem for clock bits to enable when sleeping
+        const sleep_en_bitmask = uart.getUartSleepEn();
+
+        // Configure clocks based on returned constant. We don't use deep sleep mode due to latency concerns.
+        clocks_hw.sleep_en0 = @truncate(u32, sleep_en_bitmask);
+        clocks_hw.sleep_en1 = @truncate(u32, sleep_en_bitmask >> 32);
     }
-
-    // Currently we only use UART so as that subsystem for clock bits to enable when sleeping
-    const sleep_en_bitmask = uart.getUartSleepEn();
-
-    // Configure clocks based on returned constant. We don't use deep sleep mode due to latency concerns.
-    clocks_hw.sleep_en0 = @truncate(u32, sleep_en_bitmask);
-    clocks_hw.sleep_en1 = @truncate(u32, sleep_en_bitmask >> 32);
 }

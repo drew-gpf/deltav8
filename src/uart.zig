@@ -18,13 +18,15 @@
 const std = @import("std");
 const intrin = @import("intrin.zig");
 const uart = @import("hardware/uart.zig");
-
-const uart0 = uart.uart0;
+const logger = @import("logger.zig");
 
 const c = @cImport({
     @cInclude("hardware/irq.h");
     @cInclude("pico/stdlib.h");
 });
+
+const luna_uart = uart.uart0;
+const luna_irq = c.UART0_IRQ;
 
 pub const TfLunaStandard9Cm = extern union {
     /// Magic number for header field
@@ -104,22 +106,45 @@ pub fn init() void {
     const baud_rate = 115200;
 
     // Init TF Luna UART
-    std.debug.assert(uart0.init(baud_rate) == baud_rate);
+    std.debug.assert(luna_uart.init(baud_rate) == baud_rate);
 
     // Use GPIO 0, 1 for UART0
     c.gpio_set_function(0, c.GPIO_FUNC_UART);
     c.gpio_set_function(1, c.GPIO_FUNC_UART);
 
     // Configure UART interface
-    uart0.setFormat(8, 1, .none);
-    uart0.setHwFlow(false, false);
+    luna_uart.setFormat(8, 1, .none);
+    luna_uart.setHwFlow(false, false);
+    //luna_uart.toggleFifo(false);
+
+    // Get firmware ver.
+    //var command = [_]u8{ 0x5A, 0x04, 0x01, 0x00 };
+
+    //for (command[0..3]) |byte| {
+        //command[3] +%= byte;
+    //}
+
+    //const writer = luna_uart.getWriter();
+
+    //_ = writer.write(command[0..]) catch unreachable;
+    //luna_uart.waitTx();
+    //c.gpio_put(25, true);
+
+    //var response: [7]u8 = undefined;
+
+    //const reader = luna_uart.getReader();
+   // _ = reader.read(response[0..]) catch unreachable;
+    //c.gpio_put(25, false);
+
+    //std.log.debug("Header: 0x{X}\nVersion {}.{}.{}", .{ response[0], response[5], response[4], response[3] });
+    //std.log.debug("response: 0x{X}, 0x{X}", .{ response[3], response[4] });
 
     // Install IRQ handler. We trigger an IRQ when the RX FIFO has 12 bytes.
     // In practice it will wait for all 9 bytes to be received and then wait the amount of time
     // taken to receive another 4 bytes.
-    c.irq_set_exclusive_handler(c.UART0_IRQ, uart0RxIrq);
-    c.irq_set_enabled(c.UART0_IRQ, true);
-    uart0.enableIrqFor(.three_quarters, null);
+    //c.irq_set_exclusive_handler(luna_irq, lunaUartRxIrq);
+    //c.irq_set_enabled(luna_irq, true);
+    //luna_uart.enableIrqFor(.three_quarters, null);
 }
 
 /// Get SLEEP_ENX bits required for UART functionality when sleeping.
@@ -143,18 +168,18 @@ pub fn getNextLuna() ?TfLunaStandard9Cm {
     return null;
 }
 
-/// RX IRQ for the UART0. The level is set to 12 bytes,
+/// RX IRQ for the luna UART. The level is set to 12 bytes,
 /// but in most or all cases this should fire when there are only 9 bytes in the header.
-fn uart0RxIrq() callconv(.C) void {
+fn lunaUartRxIrq() callconv(.C) void {
     // Get all bytes in the FIFO queue.
-    while (uart0.isReadable()) {
+    while (luna_uart.isReadable()) {
         // Throw out the previous data packet if we've accomplished the nigh-impossible task
         // of having more bytes in the FIFO queue than we expected
         if (current_luna_byte >= @sizeOf(TfLunaStandard9Cm)) {
             current_luna_byte = 0;
         }
 
-        current_luna_data.bytes[current_luna_byte] = uart0.readByte();
+        current_luna_data.bytes[current_luna_byte] = luna_uart.readByte();
         current_luna_byte += 1;
     }
 }
