@@ -30,7 +30,7 @@ const luna_irq = c.UART0_IRQ;
 
 pub const TfLunaPacket = extern union {
     /// Magic number for header field
-    pub const header_magic: u8 = 0x59;
+    pub const header_magic: u8 = 0x5A;
 
     fields: packed struct {
         /// Header, must be equal to header_magic.
@@ -58,6 +58,9 @@ pub const TfLunaPacket = extern union {
 
     /// Whether or not the struct's header is valid i.e. whether or not the data should be interpreted.
     pub fn isHeaderValid(this: *const TfLunaPacket) bool {
+        if (this.fields.header != TfLunaPacket.header_magic or this.fields.len != @sizeOf(TfLunaPacket) or this.fields.zero != 0)
+            return false;
+
         // Compute a simple wrapping checksum of the first 11 bytes i.e. before the checksum byte
         var checksum: u8 = 0;
 
@@ -110,13 +113,18 @@ pub fn init() void {
 
     // Disable data output temporarily to avoid collision with response checking
     toggleOutput(false) catch {};
+    _ = setOutputFreq(0) catch {};
 
     // Set the sensor to a known state. We configure it to use a 12 byte header which allows each packet to
     // trigger an RX IRQ without waiting.
     enableChecksum() catch |e| fatalError("Failed to enable checksum mode: {}", .{ e });
     setOutputFmt(.id_0) catch |e| fatalError("Failed to set output mode: {}", .{ e });
 
-    const freq = setOutputFreq(100) catch |e| fatalError("Failed to set output frequency: {}", .{ e });
+    const freq = setOutputFreq(100) catch |e| blk: {
+        fatalError("Failed to set output frequency: {}", .{ e });
+        break :blk 0;
+    };
+
     if (freq != 100) {
         fatalError("Invalid set freq {}", .{ freq });
     }
@@ -137,7 +145,8 @@ pub fn getUartSleepEn() u64 {
     const CLOCKS_SLEEP_EN1_CLK_SYS_UART0_BITS = 0x00000080;
     const CLOCKS_SLEEP_EN1_CLK_PERI_UART0_BITS = 0x00000040;
 
-    return (0) | ((CLOCKS_SLEEP_EN1_CLK_SYS_UART0_BITS | CLOCKS_SLEEP_EN1_CLK_PERI_UART0_BITS) << 32);
+    // Also enable watchdog tick (bit 12 of sleep_en1) for the timer to work
+    return (0) | ((CLOCKS_SLEEP_EN1_CLK_SYS_UART0_BITS | CLOCKS_SLEEP_EN1_CLK_PERI_UART0_BITS | (1 << 12)) << 32);
 }
 
 /// Get most recent data packet from the TF Luna, or null if none available.
@@ -294,18 +303,37 @@ fn sendCmd(which_cmd: u8, cmd_data: ?[]const u8, cmd_out: []u8) callconv(.Inline
 /// RX IRQ for the luna UART. Because the level is set to 12 bytes and we will always
 /// receive a 12 byte packet, this should only fire when the header is complete or needs to be overwritten.
 fn lunaUartRxIrq() callconv(.C) void {
-    const luna_header_size = @sizeOf(TfLunaPacket);
+    // todo see if this works and is unaffected by timers being disabled
+    const S = struct {
+        var last_time_opt: ?u32 = null;
+    };
+
+    // If more than 5ms have passed between IRQs and we are writing after the start of the header,
+    // assume that we missed a byte somewhere.
+    if (current_luna_byte != 0 and current_luna_byte < @sizeOf(TfLunaPacket)) {
+        if (S.last_time_opt) |last_time| {
+            const current_time = c.time_us_32();
+            const diff = current_time -% last_time;
+
+            if (diff >= 5000) current_luna_byte = 0;
+        }
+    }
 
     while (luna_uart.isReadable()) : (current_luna_byte += 1) {
-        if (current_luna_byte == luna_header_size) {
+        if (current_luna_byte == @sizeOf(TfLunaPacket)) {
             current_luna_byte = 0;
         }
 
         current_luna_data.bytes[current_luna_byte] = luna_uart.readByte();
     }
+
+    S.last_time_opt = c.time_us_32();
 }
 
-fn fatalError(comptime reason: []const u8, args: anytype) callconv(.Inline) noreturn {
+fn fatalError(comptime reason: []const u8, args: anytype) callconv(.Inline) void {
+    // todo: we shouldnt be error checking as there's no point and it looks like there's a whatever-percent chance
+    // that we read a valid data packet randomly.
+    // ..although i think setting the output frequency to 0 also works.
     std.log.warn(reason, args);
 
     // Flash the LED

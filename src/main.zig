@@ -27,7 +27,7 @@ const c = @cImport({
 });
 
 // Uncomment or change to enable logs for any build mode
-pub const log_level: std.log.Level = .debug;
+//pub const log_level: std.log.Level = .debug;
 
 /// stdlib log handler; no logging is done if stdio is disabled.
 pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral), comptime format: []const u8, args: anytype) void {
@@ -45,6 +45,13 @@ export fn main() void {
 
     uart.init();
 
+    // Only for demonstration purposes
+    c.gpio_init(c.PICO_DEFAULT_LED_PIN);
+    c.gpio_set_dir(c.PICO_DEFAULT_LED_PIN, true);
+    c.gpio_put(c.PICO_DEFAULT_LED_PIN, false);
+
+    var led_on = false;
+
     while (true) {
         // Prevent race conditions by masking IRQs; assumes that IRQs are unmasked at this point
         intrin.cpsidi();
@@ -52,14 +59,28 @@ export fn main() void {
         // Try to get the TF Luna packet, this is not guaranteed to return data.
         const next_luna_opt = uart.getNextLuna();
 
+        if (next_luna_opt) |luna| {
+            if (luna.isHeaderValid()) {
+                if (luna.getValidDist()) |dist| {
+                    if (dist < 35) {
+                        if (!led_on) c.gpio_put(c.PICO_DEFAULT_LED_PIN, true);
+                        led_on = true;
+                    } else {
+                        if (led_on) c.gpio_put(c.PICO_DEFAULT_LED_PIN, false);
+                        led_on = false;
+                    }
+                }
+            }
+        }
+
         // Wait for next IRQ with IRQs masked to prevent the RX IRQ from getting ignored
         intrin.wfi();
         intrin.cpsiei();
 
         if (next_luna_opt) |luna| {
-            std.log.debug("Got luna packet. Header is valid: {}, dist: {} cm, strength: {}, timestamp: {}", .{
+            std.log.debug("Luna packet: header valid: {}, dist: {}, strength: {}, timestamp: {}", .{
                 luna.isHeaderValid(), luna.getValidDist(), luna.fields.strength, luna.fields.timestamp
-            }); 
+            });
         }
     }
 }
