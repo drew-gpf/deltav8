@@ -27,7 +27,7 @@ const c = @cImport({
 });
 
 // Uncomment or change to enable logs for any build mode
-//pub const log_level: std.log.Level = .debug;
+pub const log_level: std.log.Level = .debug;
 
 /// stdlib log handler; no logging is done if stdio is disabled.
 pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral), comptime format: []const u8, args: anytype) void {
@@ -77,10 +77,10 @@ export fn main() void {
         intrin.wfi();
         intrin.cpsiei();
 
-        if (next_luna_opt) |luna| {
-            std.log.debug("Luna packet: header valid: {}, dist: {}, strength: {}, timestamp: {}", .{
-                luna.isHeaderValid(), luna.getValidDist(), luna.fields.strength, luna.fields.timestamp
-            });
-        }
+        //if (next_luna_opt) |luna| {
+            //std.log.debug("Luna packet: header valid: {}, dist: {}, strength: {}, timestamp: {}", .{
+               // luna.isHeaderValid(), luna.getValidDist(), luna.fields.strength, luna.fields.timestamp
+            //});
+        //}
     }
 }

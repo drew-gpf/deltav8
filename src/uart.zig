@@ -112,7 +112,7 @@ pub fn init() void {
     luna_uart.setHwFlow(false, false);
 
     // Disable data output temporarily to avoid collision with response checking
-    toggleOutput(false) catch {};
+    // We don't check the checksum for this, reset, and save as those will probably collide with data packets.
     _ = setOutputFreq(0) catch {};
 
     // Set the sensor to a known state. We configure it to use a 12 byte header which allows each packet to
@@ -128,9 +128,6 @@ pub fn init() void {
     if (freq != 100) {
         fatalError("Invalid set freq {}", .{ freq });
     }
-
-    // Re-enable output before installing an IRQ handler to not confuse the UART
-    toggleOutput(true) catch {};
 
     // Install IRQ handler. We trigger an IRQ when the RX FIFO has 12 bytes, which is the size
     // of the header we will receive.
@@ -331,15 +328,15 @@ fn lunaUartRxIrq() callconv(.C) void {
 }
 
 fn fatalError(comptime reason: []const u8, args: anytype) callconv(.Inline) void {
-    // todo: we shouldnt be error checking as there's no point and it looks like there's a whatever-percent chance
-    // that we read a valid data packet randomly.
-    // ..although i think setting the output frequency to 0 also works.
-    std.log.warn(reason, args);
-
     // Flash the LED
     c.gpio_init(c.PICO_DEFAULT_LED_PIN);
     c.gpio_set_dir(c.PICO_DEFAULT_LED_PIN, true);
     c.gpio_put(c.PICO_DEFAULT_LED_PIN, true);
 
-    while (true) {}
+    while (true) {
+        std.log.warn(reason, args);
+        c.sleep_ms(1000);
+
+        asm volatile ("" ::: "memory");
+    }
 }
