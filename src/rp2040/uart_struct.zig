@@ -28,7 +28,7 @@ pub const UartRegs = extern struct {
     /// Note that for RX (which reports error bits anyways), a read to DR is required to update status bits.
     sr_ecr: Reg(u32, TxRxStatus, .{ .read_write_to_clear = 0 }),
 
-    rsvd0: u32[4],
+    rsvd0: [4]u32,
 
     /// Frame register
     fr: Reg(u32, Fr, .read_only),
@@ -75,7 +75,7 @@ pub const UartRegs = extern struct {
     icr: Reg(u32, Imsc, .write_only),
     dmacr: Reg(u32, u3, .read_write),
 
-    rsvd2: u32[997],
+    rsvd2: [997]u32,
 
     periph_id0: Reg(u32, u8, .read_only),
     periph_id1: Reg(u32, u8, .read_only),
@@ -207,7 +207,7 @@ pub const Imsc = packed struct {
     oeim: u1
 };
 
-pub const FifoLevel = enum {
+pub const FifoLevel = enum(u3) {
     /// Trigger IRQ when FIFO is >= (RX) <= (TX) 1/8 full (2 bytes)
     eighth,
 

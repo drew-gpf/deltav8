@@ -26,7 +26,7 @@ const c = @cImport({
 const Reg = @import("reg.zig").Reg;
 
 const resets_hw = @intToPtr(*volatile c.resets_hw_t, 0x4000c000);
-const reset_reg = @ptrCast(*Reg(u32, u32, .read_write), &resets_hw.reset);
+const reset_reg = @intToPtr(*Reg(u32, u32, .read_write), 0x4000c000 + @offsetOf(c.resets_hw_t, "reset"));
 
 const uart0_reset_bit = @as(usize, 1) << 22;
 const uart1_reset_bit = @as(usize, 1) << 23;
@@ -47,7 +47,7 @@ pub const Uart = extern struct {
     pub fn init(this: *Uart) callconv(.Inline) !void {
         // Make sure the peripheral clock is enabled as the UARTs depend on it.
         if (c.clock_get_hz(c.clk_peri) == 0) return error.PeriClockDisabled;
-        reset();
+        this.reset();
     }
 
     /// Reset this UART. It must be re-enabled before being usable again.
@@ -57,8 +57,8 @@ pub const Uart = extern struct {
                           unreachable;
 
         // Assert this UART's reset pins using the RP2040's interface
-        reset_reg.orBits(reset_bit);
-        reset_reg.clearBits(reset_bit);
+        reset_reg.orFull(reset_bit);
+        reset_reg.clearFull(reset_bit);
         while (resets_hw.reset_done & reset_bit == 0) {}
     }
 
@@ -107,7 +107,7 @@ pub const Uart = extern struct {
 
         // Program LCR to set baud rate. This must be done before enabling the UART.
         const parity_as_int = @enumToInt(parity);
-        
+
         this.regs.lcr_h.setBits(.{
             .pen = @truncate(u1, parity_as_int),
             .eps = @truncate(u1, parity_as_int >> 1),
@@ -119,6 +119,11 @@ pub const Uart = extern struct {
 
         // Enable the UART.
         this.regs.cr.orBits(.{ .uart_en = 1 });
+    }
+
+    /// Enable or disable RX or TX. By default both are disabled.
+    pub fn setTxRx(this: *Uart, tx_en: bool, rx_en: bool) callconv(.Inline) void {
+        this.regs.cr.setBits(.{ .rxe = @boolToInt(rx_en), .txe = @boolToInt(tx_en) });
     }
 
     /// Enable RX capabilities. This must be called before reading.
@@ -195,6 +200,12 @@ pub const Uart = extern struct {
     /// Get whether or not the RX FIFO is empty. Note that the UART may still be receiving characters.
     pub fn isRxFifoEmpty(this: *Uart) callconv(.Inline) bool {
         return this.regs.fr.readBits().rxfe != 0;
+    }
+
+    /// Wait for the entire command sent to the TX FIFO to be sent.
+    pub fn waitTx(this: *Uart) callconv(.Inline) void {
+        while (!this.isTxFifoEmpty()) {}
+        while (this.isBusy()) {}
     }
 
     /// Get the frame register (fr). This is recommended if multiple flags must be checked at once,

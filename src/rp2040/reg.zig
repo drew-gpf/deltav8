@@ -63,19 +63,30 @@ pub fn Reg(comptime Container: type, comptime Bits: type, comptime constraint: A
         /// Initialize register bitfields with a named tuple, where unmentioned bits are initialized to zero.
         /// This does not modify padding bits. So, it is recommended to use bitpacked types for Bits.
         pub fn makeBits(bits: anytype) callconv(.Inline) Bits {
-            return std.mem.zeroInit(Bits, bits);
+            comptime if (@typeInfo(Bits) == .Int) return bits;
+
+            var ret = std.mem.zeroes(Bits);
+            const bit_fields = std.meta.fields(@TypeOf(bits));
+
+            inline for (bit_fields) |field| {
+                @field(ret, field.name) = @field(bits, field.name);
+            }
+
+            return ret;
         }
 
         /// makeBits; but return the full container value instead. This has the effect of zero-initializing bits that are beyond
         /// the Bits type.
         pub fn makeFull(bits: anytype) callconv(.Inline) Container {
-            const ret = This{ .full = 0, .bits = makeBits(bits) };
+            var ret = This{ .full = 0 };
+            ret.bits = makeBits(bits);
+
             return ret.full;
         }
 
         /// Whether or not this register is readable.
         pub fn isReadable() callconv(.Inline) bool {
-            return switch (This.access_type) {
+            return switch (access_type) {
                 .read_only,
                 .read_write,
                 .read_write_to_clear => true,
@@ -87,7 +98,7 @@ pub fn Reg(comptime Container: type, comptime Bits: type, comptime constraint: A
 
         /// Whether or not this register is writable. If the register is write-to-clear, it is not included here.
         pub fn isWritable() callconv(.Inline) bool {
-            return switch (This.access_type) {
+            return switch (access_type) {
                 .write_only,
                 .read_write => true,
 
@@ -99,7 +110,7 @@ pub fn Reg(comptime Container: type, comptime Bits: type, comptime constraint: A
 
         /// Get the write-to-clear value, or null if not write-to-clear.
         pub fn getClearVal() callconv(.Inline) ?comptime_int {
-            return switch (This.access_type) {
+            return switch (access_type) {
                 .write_to_clear, .read_write_to_clear => |val| val,
                 .read_only, .read_write, .write_only => null,
             };
@@ -108,56 +119,71 @@ pub fn Reg(comptime Container: type, comptime Bits: type, comptime constraint: A
         /// Read the entire register memory. Note that because regs are volatile the result of this must be cached if called multiple times,
         /// and if the caller knows that the bit values would not change.
         pub fn readFull(this: ConstSelf) callconv(.Inline) Container {
-            comptime if (!This.isReadable()) @compileError("Tried to read write-only register");
+            comptime if (!isReadable()) @compileError("Tried to read write-only register");
             return this.full;
         }
 
         /// Read bits. Note that because regs are volatile the result of this must be cached if called multiple times,
         /// and if the caller knows that the bit values would not change.
         pub fn readBits(this: ConstSelf) callconv(.Inline) Bits {
-            comptime if (!This.isReadable()) @compileError("Tried to read write-only register");
+            comptime if (!isReadable()) @compileError("Tried to read write-only register");
             return this.bits;
         }
 
         /// Write the entire register memory. Note that this is a volatile write, so multiple writes will always generate multiple writes to memory,
         /// instead of just one.
         pub fn writeFull(this: Self, full: Container) callconv(.Inline) void {
-            comptime if (!This.isWritable()) @compileError("Tried to write read-only register or write-to-clear register");
+            comptime if (!isWritable()) @compileError("Tried to write read-only register or write-to-clear register");
             this.full = full;
         }
 
         /// Write as bits. Note that this is a volatile write, so multiple writes will always generate multiple writes to memory,
         /// instead of just one. This will zero the entire register.
         pub fn writeAllBits(this: Self, bits: Bits) callconv(.Inline) void {
-            comptime if (!This.isWritable()) @compileError("Tried to write read-only register or write-to-clear register");
+            comptime if (!isWritable()) @compileError("Tried to write read-only register or write-to-clear register");
             this.full = makeFull(bits);
         }
 
         /// Clear the register. This is only valid for write-to-clear registers.
         /// Multiple writes will generate multiple memory writes, like with other operations.
         pub fn writeClearVal(this: Self) callconv(.Inline) void {
-            this.full = This.getClearVal() orelse @compileError("Tried to clear a register which is not write-to-clear.");
+            this.full = getClearVal() orelse @compileError("Tried to clear a register which is not write-to-clear.");
+        }
+
+        /// Atomically XOR the register's bits by the full value. This is only valid for read-write registers.
+        pub fn xorFull(this: Self, full: Container) callconv(.Inline) void {
+            comptime if (access_type != .read_write) @compileError("Tried to XOR a register which was not read-write.");
+            @intToPtr(*Container, @ptrToInt(&this.full) + 0x1000).* = full;
+        }
+
+        /// Atomically OR the register's bits by the full value. This is only valid for read-write registers.
+        pub fn orFull(this: Self, full: Container) callconv(.Inline) void {
+            comptime if (access_type != .read_write) @compileError("Tried to OR a register which was not read-write.");
+            @intToPtr(*Container, @ptrToInt(&this.full) + 0x2000).* = full;
+        }
+
+        /// Atomically AND the register's bits by ~(full); clear the specified bits. This is only valid for read-write registers.
+        pub fn clearFull(this: Self, full: Container) callconv(.Inline) void {
+            comptime if (access_type != .read_write) @compileError("Tried to clear a register's bits which was not read-write.");
+            @intToPtr(*Container, @ptrToInt(&this.full) + 0x3000).* = full;
         }
 
         /// Atomically XOR the register's bits. This is only valid for read-write registers.
         /// Bits not specified in `bits` are assumed to be zero.
         pub fn xorBits(this: Self, bits: anytype) callconv(.Inline) void {
-            comptime if (This.access_type != .read_write) @compileError("Tried to XOR a register which was not read-write.");
-            @intToPtr(*Container, @ptrToInt(this.full) + 0x1000).* = makeFull(bits);
+            this.xorFull(makeFull(bits));
         }
 
         /// Atomically OR the register's bits. This is only valid for read-write registers.
         /// Bits not specified in `bits` are assumed to be zero.
         pub fn orBits(this: Self, bits: anytype) callconv(.Inline) void {
-            comptime if (This.access_type != .read_write) @compileError("Tried to OR a register which was not read-write.");
-            @intToPtr(*Container, @ptrToInt(this.full) + 0x2000).* = makeFull(bits);
+            this.orFull(makeFull(bits));
         }
 
         /// Atomically AND the register's bits by ~(bits); clear the specified bits. This is only valid for read-write registers.
         /// Bits not specified in `bits` are assumed to be zero.
         pub fn clearBitsMask(this: Self, bits: anytype) callconv(.Inline) void {
-            comptime if (This.access_type != .read_write) @compileError("Tried to clear a register's bits which was not read-write.");
-            @intToPtr(*Container, @ptrToInt(this.full) + 0x3000).* = makeFull(bits);
+            this.clearFull(makeFull(bits));
         }
 
         /// Atomically AND the register's bits by the NOT of the bits of the specified bitfields in `bits`; clear the bitfields specified in `bits`.
@@ -174,7 +200,7 @@ pub fn Reg(comptime Container: type, comptime Bits: type, comptime constraint: A
                 const bit_fields = std.meta.fields(@TypeOf(bits));
 
                 for (bit_fields) |field| {
-                    const first_bit = @bitOffsetOf(@TypeOf(bits), field.field_name);
+                    const first_bit = @bitOffsetOf(Bits, field.name);
                     const bit_size = @bitSizeOf(field.field_type);
 
                     // Set bitmask of all bits covered by this bitfield, shifted by its bit position.
@@ -184,7 +210,7 @@ pub fn Reg(comptime Container: type, comptime Bits: type, comptime constraint: A
                 break :blk temp;
             };
 
-            @intToPtr(*Container, @ptrToInt(this.full) + 0x3000).* = bitmask;
+            this.clearFull(bitmask);
         }
 
         /// Atomically set specific bits. This is only valid for read-write registers.
@@ -216,7 +242,7 @@ pub fn Reg(comptime Container: type, comptime Bits: type, comptime constraint: A
 
             // If a given bit in full is 0 we can xor it by bits to set, but if the bit is 1 then we must invert the bit in bits
             // so, xor bits by whatever is stored in full to flip the bits of bits when a bit in full is 1.
-            this.xorBits((makeFull(bits) ^ this.readFull()) & makeFull(which_bits));
+            this.xorFull((makeFull(bits) ^ this.readFull()) & makeFull(which_bits));
         }
 
         /// Atomically set the specified bitfields. This is only valid for read-write registers.
@@ -234,7 +260,7 @@ pub fn Reg(comptime Container: type, comptime Bits: type, comptime constraint: A
                 const bit_fields = std.meta.fields(@TypeOf(bits));
 
                 for (bit_fields) |field| {
-                    const first_bit = @bitOffsetOf(@TypeOf(bits), field.field_name);
+                    const first_bit = @bitOffsetOf(Bits, field.name);
                     const bit_size = @bitSizeOf(field.field_type);
 
                     // Set bitmask of all bits covered by this bitfield, shifted by its bit position.
@@ -244,7 +270,7 @@ pub fn Reg(comptime Container: type, comptime Bits: type, comptime constraint: A
                 break :blk temp;
             };
 
-            this.xorBits((makeFull(bits) ^ this.readFull()) & bitmask);
+            this.xorFull((makeFull(bits) ^ this.readFull()) & bitmask);
         }
     };
 }

@@ -26,7 +26,7 @@ const c = @cImport({
 });
 
 const luna_uart = uart.uart0;
-const luna_irq = c.UART0_IRQ;
+const luna_uart_irq = c.UART0_IRQ;
 
 pub const TfLunaPacket = extern union {
     /// Magic number for header field
@@ -98,22 +98,26 @@ var current_luna_byte: usize = 0;
 /// UART1: uninitialized
 /// Additionally this will install an IRQ handler for UART0 on the current core.
 pub fn init() void {
-    const baud_rate = 115200;
-
-    // Init TF Luna UART
-    std.debug.assert(luna_uart.init(baud_rate) == baud_rate);
-
     // Use GPIO 0, 1 for UART0
     c.gpio_set_function(0, c.GPIO_FUNC_UART);
     c.gpio_set_function(1, c.GPIO_FUNC_UART);
 
-    // Configure UART interface
-    luna_uart.setFormat(8, 1, .none);
-    luna_uart.setHwFlow(false, false);
+    // Reset the UART
+    luna_uart.init() catch |e| {
+        fatalError("Failed to init UART0: {}", .{e});
+    };
 
-    // Disable data output temporarily to avoid collision with response checking
-    // We don't check the checksum for this, reset, and save as those will probably collide with data packets.
-    _ = setOutputFreq(0) catch {};
+    // Enable it, setting the required format for the TF Luna
+    luna_uart.enable(115200, .none, .one, .eight, true) catch |e| {
+        fatalError("Failed to enable UART0: {}", .{e});
+    };
+
+    // Enable RX and TX without IRQs.
+    luna_uart.setTxRx(true, true);
+
+    // Tell the sensor to stop sending us data packets
+    // todo: enable watchdog in case data transmission fails so we can still reset if something goes wrong
+    resetSensor();
 
     // Set the sensor to a known state. We configure it to use a 12 byte header which allows each packet to
     // trigger an RX IRQ without waiting.
@@ -129,11 +133,15 @@ pub fn init() void {
         fatalError("Invalid set freq {}", .{ freq });
     }
 
+    // Stop using TX as we don't need it anymore.
+    luna_uart.disableTx();
+
     // Install IRQ handler. We trigger an IRQ when the RX FIFO has 12 bytes, which is the size
-    // of the header we will receive.
-    c.irq_set_exclusive_handler(luna_irq, lunaUartRxIrq);
-    c.irq_set_enabled(luna_irq, true);
-    luna_uart.enableIrqFor(.three_quarters, null);
+    // of the header we will receive. We also specify a timeout for incomplete data transfers.
+    // todo: change irq to account for timeout. We can do it the other way.
+    c.irq_set_exclusive_handler(luna_uart_irq, lunaUartIrq);
+    c.irq_set_enabled(luna_uart_irq, true);
+    luna_uart.setRxIrq(.three_quarters, true);
 }
 
 /// Get SLEEP_ENX bits required for UART functionality when sleeping.
@@ -156,6 +164,169 @@ pub fn getNextLuna() callconv(.Inline) ?TfLunaPacket {
 
     std.debug.assert(current_luna_byte < @sizeOf(TfLunaPacket));
     return null;
+}
+
+/// Reset the sensor so we can query its values in a predictible way. If transmission fails or the sensor is misconfigured
+/// this will hang indefinitely.
+fn resetSensor() void {
+    // The TF Luna is extremely sporadic; there's a chance that it's holding out a data packet that it wants to send us,
+    // and there's a chance that the first byte we receive is 0xFF.
+    // There's a silver lining in that we can cause a soft reset, which should make it stop sending commands.
+    // Furthermore we know that the response must come in the form:
+    // 0x5A 0x05 0x02 <status> <checksum>
+    // Whereas a data packet either starts with 0x59 or has different values for the other bytes
+    // (the exception is the 8 byte packet which has no header).
+    // So we forego the nice functions that expect everything to work well here and just send the reset command.
+    const writer = luna_uart.getWriter();
+    const reader = luna_uart.getReader();
+
+    _ = writer.write(&[_]u8{ 0x5A, 0x04, 0x02, 0x60 }) catch unreachable;
+    luna_uart.waitTx();
+
+    const first_byte = blk: {
+        const byte = reader.readByte() catch unreachable;
+        if (byte == 0xFF) break :blk reader.readByte() catch unreachable;
+
+        break :blk byte;
+    };
+
+    const handleDataPacket = struct {
+        pub fn handleDataPacket(reader_inner: uart.Uart.Reader) void {
+            // Regular data packet. Read until expected sequence.
+            const model_header = [5]?u8{ 0x5A, 0x05, 0x02, null, null };
+
+            var potential_header: [5]u8 = undefined;
+            var current_idx: usize = 0;
+
+            while (true) {
+                const current_byte = reader_inner.readByte() catch unreachable;
+
+                if (model_header[current_idx]) |expected_byte| {
+                    // current_byte is expected to be equal to expected_byte based on the given sequence.
+                    // If it is, we can increment current_idx and set data in potential_header.
+                    // Otherwise we need to check if we need to restart the sequence.
+                    if (current_byte == expected_byte) {
+                        potential_header[current_idx] = current_byte;
+                        current_idx += 1;
+                    } else {
+                        current_idx = 0;
+
+                        if (current_byte == model_header[0].?) {
+                            potential_header[current_idx] = current_byte;
+                            current_idx += 1;
+                        }
+                    }
+                } else {
+                    // Set data in potential_header until current_idx is equal to its length.
+                    // Then, verify checksum.
+                    potential_header[current_idx] = current_byte;
+                    current_idx += 1;
+
+                    if (current_idx == potential_header.len) {
+                        const checksum = potential_header[potential_header.len-1];
+                        const calculated_checksum = blk: {
+                            var temp: u8 = 0;
+
+                            for (potential_header[0..potential_header.len-1]) |byte| {
+                                temp +%= byte;
+                            }
+
+                            break :blk temp;
+                        };
+
+                        // If checksums match, this was most likely our header.
+                        if (checksum == calculated_checksum)
+                            break;
+
+                        // Always reset the current index.
+                        current_idx = 0;
+
+                        // Otherwise, we need to look inside of potential_header to find start bytes.
+                        // This can be made simple as we know we do not need to calculate a checksum.
+                        // This assumes that null bytes in the header are not followed by non-null bytes.
+                        for (model_header) |byte_opt, i| {
+                            if (byte_opt != null) continue;
+                            if (model_header[current_idx] == null) break;
+
+                            if (potential_header[i] == model_header[current_idx].?) {
+                                potential_header[current_idx] = model_header[current_idx].?;
+                                current_idx += 1;
+                            }
+                        }
+
+                        // Restart iteration to get the next byte of the header.
+                    }
+                }
+            }
+
+            // We exited the loop, make sure the reset was successful
+            if (potential_header[3] != 0) fatalError("Failed to reset TF-Luna (status 0x{X})", .{ potential_header[3] });
+        }
+    }.handleDataPacket;
+
+    switch (first_byte) {
+        0x5A => {
+            // These types of packets are nice because they indicate length.
+            // The only exception are 8 byte packets, although we can also just assume that those are impossible.
+            var len = reader.readByte() catch unreachable;
+            var id = reader.readByte() catch unreachable;
+
+            const handleId2 = struct {
+                pub fn handleId2(reader_inner: uart.Uart.Reader) void {
+                    const status = reader_inner.readByte() catch unreachable;
+                    const checksum = reader_inner.readByte() catch unreachable;
+                    const checksum_compare = 0x5A +% 5 +% 2 +% status;
+
+                    if (checksum != checksum_compare) fatalError("Reset response checksum fail: 0x{X} 0x{X} 0x{X} 0x{X} 0x{X}", .{
+                        0x5A, 5, 2, status, checksum
+                    });
+
+                    if (status != 0) fatalError("Failed to reset TF-Luna (status 0x{X})", .{ status });
+                }
+            }.handleId2;
+
+            switch (id) {
+                // ID 2 is the reset command response; we want this
+                2 => handleId2(reader),
+
+                // Some other packet: read all bytes until we find a packet with ID 2
+                else => {
+                    while (true) loop: {
+                        var current_byte: u8 = 3;
+
+                        while (current_byte < len) : (current_byte += 1) {
+                            _ = reader.readByte() catch unreachable;
+                        }
+
+                        const new_header = reader.readByte() catch unreachable;
+
+                        switch (new_header) {
+                            0x5A => {},
+                            0x59 => {
+                                handleDataPacket(reader);
+                                break :loop;
+                            },
+                            else => fatalError("Unknown header 0x{X}", .{ new_header })
+                        }
+
+                        len = reader.readByte() catch unreachable;
+                        id = reader.readByte() catch unreachable;
+
+                        switch (id) {
+                            2 => {
+                                handleId2(reader);
+                                break;
+                            },
+                            else => {}
+                        }
+                    }
+                }
+            }
+        },
+
+        0x59 => handleDataPacket(reader),
+        else => fatalError("Unknown header 0x{X}", .{ first_byte })
+    }
 }
 
 /// Enable checksum verification of transmitted data
@@ -228,9 +399,6 @@ fn toggleOutput(enable: bool) callconv(.Inline) !void {
 /// This function automatically builds the command length byte. which_cmd selects the command,
 /// and cmd_data contains the data to send. If cmd_data is null, then no data is sent.
 fn sendCmd(which_cmd: u8, cmd_data: ?[]const u8, cmd_out: []u8) callconv(.Inline) !void {
-    // Flush RX FIFO queue
-    while (luna_uart.isReadable()) _ = luna_uart.readByte();
-
     const writer = luna_uart.getWriter();
     const reader = luna_uart.getReader();
 
@@ -261,24 +429,7 @@ fn sendCmd(which_cmd: u8, cmd_data: ?[]const u8, cmd_out: []u8) callconv(.Inline
 
     // Wait for data to be sent
     luna_uart.waitTx();
-
-    const S = struct {
-        var read_first_byte: bool = false;
-    };
-
-    if (!S.read_first_byte) {
-        S.read_first_byte = true;
-        const first = reader.readByte() catch unreachable;
-
-        if (first != 0xFF) {
-            _ = reader.read(cmd_out[1..]) catch unreachable;
-            cmd_out[0] = first;
-        } else {
-            _ = reader.read(cmd_out[0..]) catch unreachable;
-        }
-    } else {
-        _ = reader.read(cmd_out[0..]) catch unreachable;
-    }
+    _ = reader.read(cmd_out[0..]) catch unreachable;
 
     var out_checksum: u8 = 0;
 
@@ -297,9 +448,9 @@ fn sendCmd(which_cmd: u8, cmd_data: ?[]const u8, cmd_out: []u8) callconv(.Inline
     }
 }
 
-/// RX IRQ for the luna UART. Because the level is set to 12 bytes and we will always
-/// receive a 12 byte packet, this should only fire when the header is complete or needs to be overwritten.
-fn lunaUartRxIrq() callconv(.C) void {
+/// Combined UART IRQ. This is called when either the RX FIFO reaches 12 bytes
+/// or timed out trying to wait for it to reach 12 bytes after reading some data.
+fn lunaUartIrq() callconv(.C) void {
     // todo see if this works and is unaffected by timers being disabled
     const S = struct {
         var last_time_opt: ?u32 = null;
@@ -316,7 +467,7 @@ fn lunaUartRxIrq() callconv(.C) void {
         }
     }
 
-    while (luna_uart.isReadable()) : (current_luna_byte += 1) {
+    while (!luna_uart.isRxFifoEmpty()) : (current_luna_byte += 1) {
         if (current_luna_byte == @sizeOf(TfLunaPacket)) {
             current_luna_byte = 0;
         }
@@ -327,16 +478,14 @@ fn lunaUartRxIrq() callconv(.C) void {
     S.last_time_opt = c.time_us_32();
 }
 
-fn fatalError(comptime reason: []const u8, args: anytype) callconv(.Inline) void {
+fn fatalError(comptime reason: []const u8, args: anytype) callconv(.Inline) noreturn {
     // Flash the LED
     c.gpio_init(c.PICO_DEFAULT_LED_PIN);
     c.gpio_set_dir(c.PICO_DEFAULT_LED_PIN, true);
     c.gpio_put(c.PICO_DEFAULT_LED_PIN, true);
 
-    while (true) {
-        std.log.warn(reason, args);
-        c.sleep_ms(1000);
+    c.sleep_ms(5000);
+    std.log.warn(reason, args);
 
-        asm volatile ("" ::: "memory");
-    }
+    while (true) {}
 }
