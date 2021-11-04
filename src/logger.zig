@@ -34,13 +34,13 @@ fn logWriteImpl(bytes: []const u8) LogError!void {
     for (bytes) |byte| {
         // Convert bare '\n' into '\r\n' as the SDK would do
         if (byte == '\n' and !was_last_char_cr) {
-            if (c.putchar('\r') == c.EOF) return error.StdoutEof;
+            if (c.putchar_raw('\r') == c.EOF) return error.StdoutEof;
         } else {
             was_last_char_cr = byte == '\r';
         }
 
         // We can't guarantee that bytes is NULL-terminated, so print characters using putchar instead of printf.
-        if (c.putchar(byte) == c.EOF) return error.StdoutEof;
+        if (c.putchar_raw(byte) == c.EOF) return error.StdoutEof;
     }
 }
 

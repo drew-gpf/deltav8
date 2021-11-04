@@ -17,7 +17,7 @@
 
 const std = @import("std");
 const intrin = @import("intrin.zig");
-const uart = @import("hardware/uart.zig");
+const uart = @import("rp2040/uart.zig");
 const logger = @import("logger.zig");
 
 const c = @cImport({

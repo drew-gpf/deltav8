@@ -18,7 +18,6 @@
 const std = @import("std");
 const logger = @import("logger.zig");
 const uart = @import("uart.zig");
-const uart_hw = @import("hardware/uart.zig");
 const intrin = @import("intrin.zig");
 const clock = @import("clock.zig");
 
@@ -40,7 +39,7 @@ pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral),
 export fn main() void {
     // Configure system clocks to save power. This must be updated if the RTC or ADC are used,
     // or if USB is used outside of stdio.
-    clock.configureClocks();
+    //clock.configureClocks();
     logger.initLogger();
 
     uart.init();
