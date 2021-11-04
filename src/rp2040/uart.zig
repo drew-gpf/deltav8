@@ -59,7 +59,7 @@ pub const Uart = extern struct {
         // Assert this UART's reset pins using the RP2040's interface
         reset_reg.orFull(reset_bit);
         reset_reg.clearFull(reset_bit);
-        while (resets_hw.reset_done & reset_bit == 0) {}
+        while (resets_hw.reset_done & reset_bit == 0) asm volatile ("" ::: "memory");
     }
 
     /// Enable this UART for general use. This function must be called before calling other functions, but must be called after init() or reset().
@@ -204,8 +204,8 @@ pub const Uart = extern struct {
 
     /// Wait for the entire command sent to the TX FIFO to be sent.
     pub fn waitTx(this: *Uart) callconv(.Inline) void {
-        while (!this.isTxFifoEmpty()) {}
-        while (this.isBusy()) {}
+        while (!this.isTxFifoEmpty()) asm volatile ("" ::: "memory");
+        while (this.isBusy()) asm volatile ("" ::: "memory");
     }
 
     /// Get the frame register (fr). This is recommended if multiple flags must be checked at once,
@@ -255,7 +255,7 @@ pub const Uart = extern struct {
 
     fn writeFn(this: *Uart, bytes: []const u8) WriteError!usize {
         for (bytes) |byte| {
-            while (this.isTxFifoFull()) {}
+            while (this.isTxFifoFull()) asm volatile ("" ::: "memory");
             this.writeByte(byte);
         }
 
@@ -264,7 +264,7 @@ pub const Uart = extern struct {
 
     fn readFn(this: *Uart, bytes: []u8) ReadError!usize {
         for (bytes) |*byte| {
-            while (this.isRxFifoEmpty()) {}
+            while (this.isRxFifoEmpty()) asm volatile ("" ::: "memory");
             byte.* = this.readByte();
         }
 

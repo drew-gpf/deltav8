@@ -26,7 +26,7 @@ const c = @cImport({
 });
 
 // Uncomment or change to enable logs for any build mode
-pub const log_level: std.log.Level = .debug;
+//pub const log_level: std.log.Level = .debug;
 
 /// stdlib log handler; no logging is done if stdio is disabled.
 pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral), comptime format: []const u8, args: anytype) void {

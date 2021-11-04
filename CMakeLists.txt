@@ -57,7 +57,7 @@ target_link_libraries(deltav8 pico_stdlib)
 
 # Debug feature; enable stdio over usb. Note that UART0 and UART1 are reserved for hardware devices
 # and thus enabling stdio via UART will trigger a compile error.
-pico_enable_stdio_usb(deltav8 1)
+pico_enable_stdio_usb(deltav8 0)
 pico_enable_stdio_uart(deltav8 0)
 
 # Produce uf2 file

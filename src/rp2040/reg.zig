@@ -201,7 +201,7 @@ pub fn Reg(comptime Container: type, comptime Bits: type, comptime constraint: A
 
                 for (bit_fields) |field| {
                     const first_bit = @bitOffsetOf(Bits, field.name);
-                    const bit_size = @bitSizeOf(field.field_type);
+                    const bit_size = @bitSizeOf(@TypeOf(@field(this.bits, field.name)));
 
                     // Set bitmask of all bits covered by this bitfield, shifted by its bit position.
                     temp |= ((@as(Container, 1) << bit_size) - 1) << first_bit;
@@ -261,7 +261,7 @@ pub fn Reg(comptime Container: type, comptime Bits: type, comptime constraint: A
 
                 for (bit_fields) |field| {
                     const first_bit = @bitOffsetOf(Bits, field.name);
-                    const bit_size = @bitSizeOf(field.field_type);
+                    const bit_size = @bitSizeOf(@TypeOf(@field(this.bits, field.name)));
 
                     // Set bitmask of all bits covered by this bitfield, shifted by its bit position.
                     temp |= ((@as(Container, 1) << bit_size) - 1) << first_bit;
