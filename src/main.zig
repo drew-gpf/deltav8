@@ -39,6 +39,7 @@ pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral),
 export fn main() void {
     // Configure system clocks to save power. This must be updated if the RTC or ADC are used,
     // or if USB is used outside of stdio.
+    // I should probably "figure out" (try and find out) which clocks need to be enabled
     //clock.configureClocks();
     logger.initLogger();
 
@@ -76,10 +77,10 @@ export fn main() void {
         intrin.wfi();
         intrin.cpsiei();
 
-        //if (next_luna_opt) |luna| {
-            //std.log.debug("Luna packet: header valid: {}, dist: {}, strength: {}, timestamp: {}", .{
-               // luna.isHeaderValid(), luna.getValidDist(), luna.fields.strength, luna.fields.timestamp
-            //});
-        //}
+        if (next_luna_opt) |luna| {
+            std.log.debug("Luna packet: header valid: {}, dist: {}, strength: {}, timestamp: {}", .{
+                luna.isHeaderValid(), luna.getValidDist(), luna.fields.strength, luna.fields.timestamp
+            });
+        }
     }
 }

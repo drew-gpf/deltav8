@@ -124,6 +124,9 @@ pub fn init() void {
     enableChecksum() catch |e| fatalError("Failed to enable checksum mode: {}", .{ e });
     setOutputFmt(.id_0) catch |e| fatalError("Failed to set output mode: {}", .{ e });
 
+    // Disable output for when we re-enable sensor output
+    toggleOutput(false) catch |e| fatalError("Failed to disable output: {}", .{ e });
+
     const freq = setOutputFreq(100) catch |e| blk: {
         fatalError("Failed to set output frequency: {}", .{ e });
         break :blk 0;
@@ -132,6 +135,9 @@ pub fn init() void {
     if (freq != 100) {
         fatalError("Invalid set freq {}", .{ freq });
     }
+
+    // Re-enable output and hope that we don't collide with a data packet
+    toggleOutput(true) catch |e| fatalError("Failed to enable output: {}", .{ e });
 
     // Stop using TX as we don't need it anymore.
     luna_uart.disableTx();
@@ -427,7 +433,7 @@ fn sendCmd(which_cmd: u8, cmd_data: ?[]const u8, cmd_out: []u8) callconv(.Inline
     if (cmd_data) |cmd| _ = writer.write(cmd[0..]) catch unreachable;
     _ = writer.writeByte(checksum) catch unreachable;
 
-    // Wait for data to be sent
+    // Wait for data to be sent, then read the response
     luna_uart.waitTx();
     _ = reader.read(cmd_out[0..]) catch unreachable;
 

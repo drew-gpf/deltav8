@@ -181,7 +181,9 @@ pub fn Reg(comptime Container: type, comptime Bits: type, comptime constraint: A
         }
 
         /// Atomically AND the register's bits by ~(bits); clear the specified bits. This is only valid for read-write registers.
-        /// Bits not specified in `bits` are assumed to be zero.
+        /// Bits not specified in `bits` are assumed to be zero. Note that this only works for values specified in each field;
+        /// a field that is specified but has some bits set to 0 in the actual value will not have those bits cleared.
+        /// To clear every bit of all specified fields, see clearBits.
         pub fn clearBitsMask(this: Self, bits: anytype) callconv(.Inline) void {
             this.clearFull(makeFull(bits));
         }
