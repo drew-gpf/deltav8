@@ -48,7 +48,9 @@ pub fn main() !u8 {
         });
 
         // Because we know the C compiler we need to do another thing: get the sysroot it uses.
-        // We then pass this to --sysroot if something was given.
+        // We then pass this to --search-prefix if something was given.
+        // Note that this effectively only works for GCC running on Windows as it will always be configured
+        // to use its own sysroot.
         {
             var child = try std.ChildProcess.init(&[_][]const u8{ args[1], "-print-sysroot" }, allocator);
             defer child.deinit();
@@ -58,30 +60,38 @@ pub fn main() !u8 {
             try child.spawn();
 
             var should_kill = true;
+
             errdefer if (should_kill) {
                 _ = child.kill() catch {};
             };
 
-            // Read sysroot path from stdout
+            // Read sysroot path from stdout.
             const stdout_reader = child.stdout.?.reader();
-            const sysroot_path_opt = try stdout_reader.readUntilDelimiterOrEofAlloc(allocator, 0, std.math.maxInt(usize));
 
-            if (sysroot_path_opt) |sysroot_path| {
-                // sysroot_path could contain a \n or \r\n sequence which will completely fuck up everything, so try
-                // to look for that first.
-                const first_bad_char = blk: {
-                    for (sysroot_path) |char, i| {
-                        if (char == '\n' or char == '\r') break :blk i;
-                    }
+            const sysroot_path = (try stdout_reader.readUntilDelimiterOrEofAlloc(allocator, 0, std.math.maxInt(usize))) orelse {
+                std.log.err("Failed to get sysroot path via gcc -print-sysroot; cannot set include dirs.", .{});
+                return error.FailedToGetSysroot;
+            };
 
-                    break :blk sysroot_path.len;
-                };
+            // If you want to set the sysroot path manually you can uncomment the following lines and comment out the above lines,
+            // replacing "path-to-sysroot" with the sysroot path:
+            //const sysroot_path = "path-to-sysroot";
 
-                try build_args.append("--search-prefix");
-                try build_args.append(sysroot_path[0..first_bad_char]);
-            }
+            // sysroot_path could contain a \n or \r\n sequence which will completely break everything, so try
+            // to look for that first, although this breaks ""valid"" UNIX paths which can contain these characters.
+            const first_bad_char = blk: {
+                for (sysroot_path) |char, i| {
+                    if (char == '\n' or char == '\r') break :blk i;
+                }
+
+                break :blk sysroot_path.len;
+            };
+
+            try build_args.append("--search-prefix");
+            try build_args.append(sysroot_path[0..first_bad_char]);
 
             should_kill = false;
+
             switch (try child.wait()) {
                 .Exited => |val| {
                     if (val != 0) return val;
