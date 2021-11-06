@@ -47,59 +47,78 @@ pub fn main() !u8 {
             ".." // <root>
         });
 
-        // Because we know the C compiler we need to do another thing: get the sysroot it uses.
-        // We then pass this to --search-prefix if something was given.
-        // Note that this effectively only works for GCC running on Windows as it will always be configured
-        // to use its own sysroot.
+        // We know the C compiler but we need to grep for its search prefix. The standard way to do this
+        // is with -v while using other commands to allow it to function without specifying a file and by
+        // stopping after preprocessing.
+        // gcc -E -Wp,-v -
+        // Of course, if we weren't using UNIX in the year 2021 this would all be sane and there would be some
+        // API to query for this instead of relying on parsing text output, but oh well.
         {
-            var child = try std.ChildProcess.init(&[_][]const u8{ args[1], "-print-sysroot" }, allocator);
+            var child = try std.ChildProcess.init(&[_][]const u8{ args[1], "-E", "-Wp,-v", "-" }, allocator);
             defer child.deinit();
 
-            // Set behavior to pipe. In doing so when we spawn the process it will write to the stdout file.
-            child.stdout_behavior = .Pipe;
-            try child.spawn();
+            // For some reason the command will output to stderr so we need to pipe stderr
+            // and ignore stdout.
+            child.stderr_behavior = .Pipe;
+            child.stdout_behavior = .Ignore;
 
+            // We also need stdin to have an end-of-file so it doesn't wait on input forever.
+            // The zig stdlib lets us do this by setting stdin to .Ignore which pipes it to /dev/null or similar.
+            child.stdin_behavior = .Ignore;
+
+            try child.spawn();
             var should_kill = true;
 
             errdefer if (should_kill) {
                 _ = child.kill() catch {};
             };
 
-            // Read sysroot path from stdout.
-            const stdout_reader = child.stdout.?.reader();
+            // Get the output. In here, somewhere, is the correct prefix.
+            // Here Zig will include other files for us so we only need a prefix containing stdio.h.
+            const stderr_reader = child.stderr.?.reader();
+            const stderr = (try stderr_reader.readUntilDelimiterOrEofAlloc(allocator, 0, std.math.maxInt(usize))).?;
 
-            const sysroot_path = (try stdout_reader.readUntilDelimiterOrEofAlloc(allocator, 0, std.math.maxInt(usize))) orelse {
-                std.log.err("Failed to get sysroot path via gcc -print-sysroot; cannot set include dirs.", .{});
-                return error.FailedToGetSysroot;
-            };
+            const search_prefix = blk: {
+                // UNIX paths are all kinds of insane because they accept every character except \0 and /.
+                // This means they can have \r or \n or \" inside of them which can break our parsing.
+                // I don't care. If you want to install your GCC in an invalid path that can't even be created
+                // using bash, then go ahead, but it's theoretically impossible to parse anything without knowing
+                // when the paths begin and end (without trying to access them manually), in a cross-platform way.
+                // So assume everything is nice: the paths we want come just after the line
+                // "#include <...> search starts here:"
+                // and are prefixed with a space char and are each on their own lines.
+                // We also assume that the first invalid path marks the end of the given list.
+                var lines = std.mem.tokenize(u8, stderr, "\n\r");
+                var find_search_prefix: bool = false;
 
-            // If you want to set the sysroot path manually you can uncomment the following lines and comment out the above lines,
-            // replacing "path-to-sysroot" with the sysroot path:
-            //const sysroot_path = "path-to-sysroot";
+                while (lines.next()) |line| {
+                    if (find_search_prefix) {
+                        // Ignore space at the start and go back one directory, while also parsing the
+                        // weird ../../ sequences already in the path.
+                        const full_path = try std.fs.path.resolve(allocator, &[_][]const u8{ line[1..], ".." });
 
-            // sysroot_path could contain a \n or \r\n sequence which will completely break everything, so try
-            // to look for that first, although this breaks ""valid"" UNIX paths which can contain these characters.
-            const first_bad_char = blk: {
-                for (sysroot_path) |char, i| {
-                    if (char == '\n' or char == '\r') break :blk i;
+                        // Open this dir to see if it's valid
+                        var path_dir = std.fs.openDirAbsolute(full_path, .{}) catch break;
+                        defer path_dir.close();
+
+                        // If we can access include/stdio.h, this is probably the prefix dir.
+                        path_dir.access(try std.fs.path.join(allocator, &[_][]const u8{ "include", "stdio.h" }), .{}) catch continue;
+
+                        break :blk full_path;
+                    } else if (std.mem.eql(u8, line, "#include <...> search starts here:")) {
+                        find_search_prefix = true;
+                    }
                 }
 
-                break :blk sysroot_path.len;
+                std.log.err("Failed to find search prefix. Full GCC output:\n{s}", .{ stderr });
+                return error.FailedToFindSearchPrefix;
             };
 
             try build_args.append("--search-prefix");
-            try build_args.append(sysroot_path[0..first_bad_char]);
+            try build_args.append(search_prefix);
 
             should_kill = false;
-
-            switch (try child.wait()) {
-                .Exited => |val| {
-                    if (val != 0) return val;
-                },
-                .Signal => return error.Signal,
-                .Stopped => return error.Stopped,
-                .Unknown => return error.Unknown,
-            }
+            _ = try child.wait();
         }
 
         var zig_opt: ?[]const u8 = "-Drelease-fast";

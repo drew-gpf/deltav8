@@ -29,12 +29,15 @@ execute_process(COMMAND ${CMAKE_COMMAND} -E rm -rf zig-cache
     WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
 )
 
-# To make the cmake dummy system work we need to touch the file before building.
-# This will force CMake to execute the C compiler for cmake_dummy.c,
-# which causes us to run zig build on the root dir each time we run the makefile.
-# This is fine because Zig will only recompile files if necessary; we always want to run zig build.
-add_custom_target(dummy_toucher
+# Supress warnings about deltav8_zig.o not existing.
+# This is kind of a hack but it shouldn't(???) matter as the actual object file is generated
+# along with the cmake dummy object file, so it will be present when linking.
+# We also want to touch the dummy file so that zig build is ran on every make.
+add_custom_target(fix_zig_obj_file
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_LIST_DIR}/out"
+    COMMAND ${CMAKE_COMMAND} -E touch "${ZIG_OBJ_PATH}"
     COMMAND ${CMAKE_COMMAND} -E touch_nocreate "${DUMMY_SRC_PATH}"
+    BYPRODUCTS "${ZIG_OBJ_PATH}"
 )
 
 # Create zig_runner, if needed. This is executed on every make.
@@ -44,7 +47,7 @@ add_custom_target(zig_runner
 )
 
 add_executable(deltav8 ${DUMMY_SRC_PATH} ${ZIG_OBJ_PATH})
-add_dependencies(deltav8 dummy_toucher zig_runner)
+add_dependencies(deltav8 fix_zig_obj_file zig_runner)
 
 # Reduce code size as we always use the V2 bootrom
 add_compile_definitions(PICO_FLOAT_SUPPORT_ROM_V1=0)
@@ -62,12 +65,6 @@ pico_enable_stdio_uart(deltav8 0)
 
 # Produce uf2 file
 pico_add_extra_outputs(deltav8)
-
-# Supress warnings about deltav8_zig.o not existing.
-add_custom_target(stop_warning
-    COMMAND ""
-    BYPRODUCTS "${ZIG_OBJ_PATH}"
-)
 
 # Here we're faced with a problem: we need to give our Zig code the full command line it would normally receive
 # such that it knows about pre-included files, directories, definitions, etc.
