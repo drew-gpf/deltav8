@@ -42,7 +42,7 @@ export fn main() void {
     // I should probably "figure out" (try and find out) which clocks need to be enabled
     //clock.configureClocks();
     logger.initLogger();
-
+    
     uart.init();
 
     // Only for demonstration purposes
@@ -76,11 +76,5 @@ export fn main() void {
         // Wait for next IRQ with IRQs masked to prevent the RX IRQ from getting ignored
         intrin.wfi();
         intrin.cpsiei();
-
-        if (next_luna_opt) |luna| {
-            std.log.debug("Luna packet: header valid: {}, dist: {}, strength: {}, timestamp: {}", .{
-                luna.isHeaderValid(), luna.getValidDist(), luna.fields.strength, luna.fields.timestamp
-            });
-        }
     }
 }

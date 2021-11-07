@@ -118,6 +118,7 @@ pub const Uart = extern struct {
         });
 
         // Enable the UART.
+        this.regs.cr.clearBits(.{ .rxe = 0, .txe = 0 });
         this.regs.cr.orBits(.{ .uart_en = 1 });
     }
 
