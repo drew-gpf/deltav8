@@ -23,7 +23,6 @@ const logger = @import("logger.zig");
 const c = @cImport({
     @cInclude("hardware/irq.h");
     @cInclude("pico/stdlib.h");
-    @cInclude("hardware/watchdog.h");
 });
 
 const luna_uart = uart.uart0;
@@ -176,7 +175,7 @@ pub fn getNextLuna() callconv(.Inline) ?TfLunaPacket {
 }
 
 
-/// Reset the sensor. Note that using this may cause the sensor to endlessly emit data packets.
+/// Reset the sensor.
 fn resetSensor() callconv(.Inline) !void {
     if (getLunaResponse(void, {}, u8, 2) != 0) return error.FailedToReset;
 }
@@ -273,7 +272,7 @@ fn getLunaResponse(comptime DataOut: type, data_out: DataOut, comptime DataIn: t
     // Continually wait for a proper response.
     var i: usize = 0;
 
-    while (true) : (i += 1) {
+    while (true) : (i +%= 1) {
         intrin.cpsidi();
 
         // The IRQ will set the potential header slice to null if all data has been transmitted.
@@ -283,11 +282,11 @@ fn getLunaResponse(comptime DataOut: type, data_out: DataOut, comptime DataIn: t
         }
 
         // Don't wait for the IRQ as our command may not have been sent.
-        // If we spend 200ms waiting for something but nothing comes, resend the command.
+        // If we spend 10ms waiting for something but nothing comes, resend the command.
         intrin.cpsiei();
 
-        // Send command to begin with, as well as every 200ms (100us * 2000).
-        if (i % 2000 == 0) {
+        // Send command to begin with, as well as every 10ms (100us * 100).
+        if (i % 100 == 0) {
             // Write command then checksum. This will unroll to an equivalent sequence of a full command.
             // Because we always at least send 4 bytes our base len is 4 bytes.
             _ = writer.writeByte(header_byte) catch unreachable;

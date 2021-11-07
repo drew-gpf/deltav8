@@ -23,6 +23,7 @@ const clock = @import("clock.zig");
 
 const c = @cImport({
     @cInclude("pico/stdlib.h");
+    @cInclude("hardware/watchdog.h");
 });
 
 // Uncomment or change to enable logs for any build mode
@@ -37,6 +38,9 @@ pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral),
 }
 
 export fn main() void {
+    // Configure a generous watchdog timer of 350ms in case something goes wrong.
+    c.watchdog_enable(350, true);
+
     // Configure system clocks to save power. This must be updated if the RTC or ADC are used,
     // or if USB is used outside of stdio.
     // I should probably "figure out" (try and find out) which clocks need to be enabled
@@ -53,6 +57,8 @@ export fn main() void {
     var led_on = false;
 
     while (true) {
+        c.watchdog_update();
+
         // Prevent race conditions by masking IRQs; assumes that IRQs are unmasked at this point
         intrin.cpsidi();
 
