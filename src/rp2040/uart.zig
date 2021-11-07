@@ -178,7 +178,7 @@ pub const Uart = extern struct {
         return this.regs.mis.readBits();
     }
 
-    /// Get whether or not the UART is transmitting data. If false, there may still be data in the TX FIFO.
+    /// Get whether or not the UART is transmitting data, or is waiting to transmit data from the TX FIFO queue.
     pub fn isBusy(this: *Uart) callconv(.Inline) bool {
         return this.regs.fr.readBits().busy != 0;
     }
@@ -201,12 +201,6 @@ pub const Uart = extern struct {
     /// Get whether or not the RX FIFO is empty. Note that the UART may still be receiving characters.
     pub fn isRxFifoEmpty(this: *Uart) callconv(.Inline) bool {
         return this.regs.fr.readBits().rxfe != 0;
-    }
-
-    /// Wait for the entire command sent to the TX FIFO to be sent.
-    pub fn waitTx(this: *Uart) callconv(.Inline) void {
-        while (!this.isTxFifoEmpty()) asm volatile ("" ::: "memory");
-        while (this.isBusy()) asm volatile ("" ::: "memory");
     }
 
     /// Get the frame register (fr). This is recommended if multiple flags must be checked at once,

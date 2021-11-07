@@ -23,6 +23,7 @@ const logger = @import("logger.zig");
 const c = @cImport({
     @cInclude("hardware/irq.h");
     @cInclude("pico/stdlib.h");
+    @cInclude("hardware/watchdog.h");
 });
 
 const luna_uart = uart.uart0;
@@ -129,14 +130,14 @@ pub fn init() void {
     enableChecksum() catch |e| fatalError("Failed to enable checksum mode: {}", .{ e });
     std.log.debug("Enabled checksum verification", .{});
 
+    c.gpio_put(c.PICO_DEFAULT_LED_PIN, false);
+
     setOutputFmt(.id_0) catch |e| fatalError("Failed to set output mode: {}", .{ e });
     std.log.debug("Set output mode", .{});
 
     // Default 100Hz
     setOutputFreq(100) catch |e| fatalError("Failed to set output frequency: {}", .{ e });
     std.log.debug("Set output frequency", .{});
-
-    c.gpio_put(c.PICO_DEFAULT_LED_PIN, false);
 
     // Disable RX and TX temporarily
     luna_uart.setRxIrq(null, false);
@@ -274,6 +275,8 @@ fn getLunaResponse(comptime DataOut: type, data_out: DataOut, comptime DataIn: t
     CommState.id = id;
 
     intrin.cpsiei();
+
+    c.sleep_ms(1000);
 
     // Write command then checksum. This will unroll to an equivalent sequence of a full command.
     // Because we always at least send 4 bytes our base len is 4 bytes.
