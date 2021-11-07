@@ -127,7 +127,7 @@ pub fn getUartSleepEn() u64 {
     const CLOCKS_SLEEP_EN1_CLK_SYS_UART0_BITS = 0x00000080;
     const CLOCKS_SLEEP_EN1_CLK_PERI_UART0_BITS = 0x00000040;
 
-    // Also enable watchdog tick (bit 12 of sleep_en1) for the timer to work
+    // Also enable watchdog tick (bit 12 of sleep_en1) for the watchdog timer to work
     return (0) | ((CLOCKS_SLEEP_EN1_CLK_SYS_UART0_BITS | CLOCKS_SLEEP_EN1_CLK_PERI_UART0_BITS | (1 << 12)) << 32);
 }
 

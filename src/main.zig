@@ -38,11 +38,15 @@ pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral),
 }
 
 export fn main() void {
-    // Configure a generous watchdog timer of 350ms in case something goes wrong.
-    // Don't do this if stdio is enabled. We may need to read some diagnostic, or printing might just take a while.
-    if (!logger.stdio_enabled) {
-        c.watchdog_enable(350, true);
-    }
+    // Configure a generous watchdog timer of 100ms in case something goes wrong.
+    // This should be enough time for about 10 data packets while transmitting. During init it should be more than
+    // enough time to init everything; although it only exists if the sensor and microcontroller are powered on at the same time
+    // as the sensor needs to wait a bit before initializing.
+    // During testing it seems the sensor needs ~450ms to initialize (minus the 50ms delay for a valid data packet)
+    // so this will restart about 4 times. A reset is required as we will need to also reset the UART device itself.
+    // If stdio is enabled we instead want a longer timeout like 1 second to prevent conflicts with print delays.
+    // This is probably too long.
+    c.watchdog_enable(if (logger.stdio_enabled) 1000 else 100, true);
 
     // Configure system clocks to save power. This must be updated if the RTC or ADC are used,
     // or if USB is used outside of stdio.
@@ -55,8 +59,10 @@ export fn main() void {
 
     // Magic sleep value of 50ms because the sensor's data is unreliable before this period,
     // where dist seems to be some value smaller than it actually should be.
-    // This might need to be changed as more things are initialized.
+    // This seems to only be needed after the sensor is initialized, so its value can remain fixed.
+    c.watchdog_update();
     c.sleep_ms(50);
+    c.watchdog_update();
 
     // Only for demonstration purposes
     c.gpio_init(c.PICO_DEFAULT_LED_PIN);
@@ -66,10 +72,6 @@ export fn main() void {
     var led_on = false;
 
     while (true) {
-        if (!logger.stdio_enabled) {
-            c.watchdog_update();
-        }
-
         // Prevent race conditions by masking IRQs; assumes that IRQs are unmasked at this point
         intrin.cpsidi();
 
@@ -91,5 +93,7 @@ export fn main() void {
         // Wait for next IRQ with IRQs masked to prevent the RX IRQ from getting ignored
         intrin.wfi();
         intrin.cpsiei();
+
+        c.watchdog_update();
     }
 }
