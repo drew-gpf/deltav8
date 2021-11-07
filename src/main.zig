@@ -47,7 +47,13 @@ export fn main() void {
     //clock.configureClocks();
     logger.initLogger();
     
+    // Init the sensor and the accompanying UART
     uart.init();
+
+    // Magic sleep value of 50ms because the sensor's data is unreliable before this period,
+    // where dist seems to be some value smaller than it actually should be.
+    // This might need to be changed as more things are initialized.
+    c.sleep_ms(50);
 
     // Only for demonstration purposes
     c.gpio_init(c.PICO_DEFAULT_LED_PIN);
