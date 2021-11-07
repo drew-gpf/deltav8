@@ -39,7 +39,10 @@ pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral),
 
 export fn main() void {
     // Configure a generous watchdog timer of 350ms in case something goes wrong.
-    c.watchdog_enable(350, true);
+    // Don't do this if stdio is enabled. We may need to read some diagnostic, or printing might just take a while.
+    if (!logger.stdio_enabled) {
+        c.watchdog_enable(350, true);
+    }
 
     // Configure system clocks to save power. This must be updated if the RTC or ADC are used,
     // or if USB is used outside of stdio.
@@ -63,7 +66,9 @@ export fn main() void {
     var led_on = false;
 
     while (true) {
-        c.watchdog_update();
+        if (!logger.stdio_enabled) {
+            c.watchdog_update();
+        }
 
         // Prevent race conditions by masking IRQs; assumes that IRQs are unmasked at this point
         intrin.cpsidi();

@@ -455,8 +455,10 @@ fn fatalError(comptime reason: []const u8, args: anytype) callconv(.Inline) nore
     c.gpio_set_dir(c.PICO_DEFAULT_LED_PIN, true);
     c.gpio_put(c.PICO_DEFAULT_LED_PIN, true);
 
-    c.sleep_ms(5000);
-    std.log.warn(reason, args);
+    if (logger.stdio_enabled) {
+        c.sleep_ms(5000);
+        std.log.warn(reason, args);
+    }
 
     while (true) {}
 }
