@@ -145,7 +145,6 @@ pub fn init() void {
     c.irq_set_enabled(luna_uart_irq, true);
 
     // Set the level to 12 bytes, which is also the size of our data packet.
-    // todo: change this IRQ to account for the FIFO now being enabled properly
     luna_uart.setRxIrq(.three_quarters, true);
     luna_uart.enableRx();
 
@@ -322,6 +321,9 @@ const CommState = struct {
 
 /// Combined UART IRQ used during regular communication. There is no TX IRQ and the RX IRQ
 /// is configured to fire after receiving 2 bytes, or timing out.
+/// Note that this IRQ is designed to be extremely reliable when the goal is to simply get the one and only
+/// type of header being sent its way. Use of this with the ID-0 data packet is a bad idea since there are latency
+/// and reliability concerns.
 fn lunaUartCommIrq() callconv(.C) void {
     if (CommState.potential_header) |potential_header| blk: {
         // Read until expected sequence
@@ -423,20 +425,17 @@ fn lunaUartCommIrq() callconv(.C) void {
 /// Combined UART IRQ. This is called when either the RX FIFO reaches 12 bytes
 /// or timed out trying to wait for it to reach 12 bytes after reading some data.
 fn lunaUartIrq() callconv(.C) void {
-    // todo see if this works and is unaffected by timers being disabled
     const S = struct {
-        var last_time_opt: ?u32 = null;
+        var last_time: u32 = undefined;
     };
 
     // If more than 5ms have passed between IRQs and we are writing after the start of the header,
     // assume that we missed a byte somewhere.
     if (current_luna_byte != 0 and current_luna_byte < @sizeOf(TfLunaPacket)) {
-        if (S.last_time_opt) |last_time| {
-            const current_time = c.time_us_32();
-            const diff = current_time -% last_time;
+        const current_time = c.time_us_32();
+        const diff = current_time -% S.last_time;
 
-            if (diff >= 5000) current_luna_byte = 0;
-        }
+        if (diff >= 5000) current_luna_byte = 0;
     }
 
     while (!luna_uart.isRxFifoEmpty()) : (current_luna_byte += 1) {
@@ -447,7 +446,7 @@ fn lunaUartIrq() callconv(.C) void {
         current_luna_data.bytes[current_luna_byte] = luna_uart.readByte();
     }
 
-    S.last_time_opt = c.time_us_32();
+    S.last_time = c.time_us_32();
 }
 
 fn fatalError(comptime reason: []const u8, args: anytype) callconv(.Inline) noreturn {
