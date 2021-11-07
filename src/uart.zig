@@ -121,16 +121,10 @@ pub fn init() void {
     luna_uart.setTxRx(true, true);
     std.log.debug("Initialized UART0", .{});
 
-    c.gpio_init(c.PICO_DEFAULT_LED_PIN);
-    c.gpio_set_dir(c.PICO_DEFAULT_LED_PIN, true);
-    c.gpio_put(c.PICO_DEFAULT_LED_PIN, true);
-
     // Set the sensor to a known state. We configure it to use a 12 byte header which allows each packet to
     // trigger an RX IRQ without waiting.
     enableChecksum() catch |e| fatalError("Failed to enable checksum mode: {}", .{ e });
     std.log.debug("Enabled checksum verification", .{});
-
-    c.gpio_put(c.PICO_DEFAULT_LED_PIN, false);
 
     setOutputFmt(.id_0) catch |e| fatalError("Failed to set output mode: {}", .{ e });
     std.log.debug("Set output mode", .{});
@@ -276,18 +270,10 @@ fn getLunaResponse(comptime DataOut: type, data_out: DataOut, comptime DataIn: t
 
     intrin.cpsiei();
 
-    c.sleep_ms(1000);
-
-    // Write command then checksum. This will unroll to an equivalent sequence of a full command.
-    // Because we always at least send 4 bytes our base len is 4 bytes.
-    _ = writer.writeByte(header_byte) catch unreachable;
-    _ = writer.writeByte(len_out) catch unreachable;
-    _ = writer.writeByte(id) catch unreachable;
-    if (comptime send_data_out) _ = writer.write(std.mem.asBytes(&data_out)) catch unreachable;
-    _ = writer.writeByte(out_checksum) catch unreachable;
-
     // Continually wait for a proper response.
-    while (true) {
+    var i: usize = 0;
+
+    while (true) : (i += 1) {
         intrin.cpsidi();
 
         // The IRQ will set the potential header slice to null if all data has been transmitted.
@@ -296,9 +282,22 @@ fn getLunaResponse(comptime DataOut: type, data_out: DataOut, comptime DataIn: t
             break;
         }
 
-        // Otherwise we need to wait for the next IRQ.
-        intrin.wfi();
+        // Don't wait for the IRQ as our command may not have been sent.
+        // If we spend 200ms waiting for something but nothing comes, resend the command.
         intrin.cpsiei();
+
+        // Send command to begin with, as well as every 200ms (100us * 2000).
+        if (i % 2000 == 0) {
+            // Write command then checksum. This will unroll to an equivalent sequence of a full command.
+            // Because we always at least send 4 bytes our base len is 4 bytes.
+            _ = writer.writeByte(header_byte) catch unreachable;
+            _ = writer.writeByte(len_out) catch unreachable;
+            _ = writer.writeByte(id) catch unreachable;
+            if (comptime send_data_out) _ = writer.write(std.mem.asBytes(&data_out)) catch unreachable;
+            _ = writer.writeByte(out_checksum) catch unreachable;
+        }
+
+        c.sleep_us(100);
     }
 
     // Read data.
