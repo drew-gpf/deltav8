@@ -208,19 +208,19 @@ pub const Imsc = packed struct {
 };
 
 pub const FifoLevel = enum(u3) {
-    /// Trigger IRQ when FIFO is >= (RX) <= (TX) 1/8 full (2 bytes)
+    /// Trigger IRQ when FIFO is >= (RX) <= (TX) 1/8 full (4 bytes)
     eighth,
 
-    /// Trigger IRQ when FIFO is >= (RX) <= (TX) 1/4 full (4 bytes)
+    /// Trigger IRQ when FIFO is >= (RX) <= (TX) 1/4 full (8 bytes)
     quarter,
 
-    /// Trigger IRQ when FIFO is >= (RX) <= (TX) 1/2 full (8 bytes)
+    /// Trigger IRQ when FIFO is >= (RX) <= (TX) 1/2 full (16 bytes)
     half,
 
-    /// Trigger IRQ when FIFO is >= (RX) <= (TX) 3/4 full (12 bytes)
+    /// Trigger IRQ when FIFO is >= (RX) <= (TX) 3/4 full (24 bytes)
     three_quarters,
 
-    /// Trigger IRQ when FIFO is >= (RX) <= (TX) 7/8 full (14 bytes)
+    /// Trigger IRQ when FIFO is >= (RX) <= (TX) 7/8 full (28 bytes)
     seven_eighths
 };
 

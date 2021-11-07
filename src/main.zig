@@ -77,15 +77,13 @@ export fn main() void {
         const next_luna_opt = uart.getNextLuna();
 
         if (next_luna_opt) |luna| {
-            if (luna.isHeaderValid()) {
-                if (luna.getValidDist()) |dist| {
-                    if (dist < 35) {
-                        if (!led_on) c.gpio_put(c.PICO_DEFAULT_LED_PIN, true);
-                        led_on = true;
-                    } else {
-                        if (led_on) c.gpio_put(c.PICO_DEFAULT_LED_PIN, false);
-                        led_on = false;
-                    }
+            if (luna.getValidDist()) |dist| {
+                if (dist < 35) {
+                    if (!led_on) c.gpio_put(c.PICO_DEFAULT_LED_PIN, true);
+                    led_on = true;
+                } else {
+                    if (led_on) c.gpio_put(c.PICO_DEFAULT_LED_PIN, false);
+                    led_on = false;
                 }
             }
         }
