@@ -38,15 +38,12 @@ pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral),
 }
 
 export fn main() void {
-    // Configure a generous watchdog timer of 100ms in case something goes wrong.
-    // This should be enough time for about 10 data packets while transmitting. During init it should be more than
-    // enough time to init everything; although it only exists if the sensor and microcontroller are powered on at the same time
-    // as the sensor needs to wait a bit before initializing.
-    // During testing it seems the sensor needs ~450ms to initialize (minus the 50ms delay for a valid data packet)
-    // so this will restart about 4 times. A reset is required as we will need to also reset the UART device itself.
-    // If stdio is enabled we instead want a longer timeout like 1 second to prevent conflicts with print delays.
-    // This is probably too long.
-    c.watchdog_enable(if (logger.stdio_enabled) 1000 else 100, true);
+    // Configure a generous watchdog timer of 1 second in case something goes wrong.
+    // This should be more than enough time for the sensor to init everything;
+    // during testing it seems the sensor needs ~450ms to initialize (minus the 50ms delay for a valid data packet).
+    // If stdio is enabled we use a 10 second timeout instead as UART failures will wait five seconds for someone
+    // to connect the USB cable.
+    c.watchdog_enable(if (logger.stdio_enabled) 10000 else 1000, true);
 
     // Configure system clocks to save power. This must be updated if the RTC or ADC are used,
     // or if USB is used outside of stdio.
@@ -63,6 +60,10 @@ export fn main() void {
     c.watchdog_update();
     c.sleep_ms(50);
     c.watchdog_update();
+
+    // Set a new, lower watchdog of 50ms which is enough time to transmit 5 data packets.
+    // Because we reset independent of the sensor there won't be much time between resets if something randomly goes wrong.
+    c.watchdog_enable(50, true);
 
     // Only for demonstration purposes
     c.gpio_init(c.PICO_DEFAULT_LED_PIN);

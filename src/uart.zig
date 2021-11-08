@@ -354,10 +354,7 @@ fn lunaUartCommIrq() callconv(.C) void {
                     // Otherwise, we need to look inside of potential_header to find start bytes.
                     // This can be made simple as we know we do not need to calculate a checksum.
                     // This assumes that null bytes in the header are not followed by non-null bytes.
-                    for (potential_header) |byte, i| {
-                        // Only look at variable bytes in the potential header
-                        if (i < model_header.len) continue;
-
+                    for (potential_header[model_header.len..]) |byte| {
                         // Stop once we hit variable bytes in the model header
                         if (CommState.current_idx >= model_header.len) break;
 
@@ -423,5 +420,6 @@ fn fatalError(comptime reason: []const u8, args: anytype) callconv(.Inline) nore
         std.log.warn(reason, args);
     }
 
+    // Wait to get killed by the watchdog
     while (true) {}
 }

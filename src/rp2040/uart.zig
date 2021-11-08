@@ -67,7 +67,14 @@ pub const Uart = extern struct {
     /// Parity checking applies for both TX and RX.
     /// FIFO enable applies for both TX and RX.
     /// This assumes the UART has not already been enabled.
-    pub fn enable(this: *Uart, baud_rate: usize, parity: ParityCheck, stop_bits: StopBits, data_bits: WLen, fifo_enable: bool) callconv(.Inline) error{Overflow}!void {
+    pub fn enable(
+        this: *Uart,
+        baud_rate: usize,
+        parity: ParityCheck,
+        stop_bits: StopBits,
+        data_bits: WLen,
+        fifo_enable: bool
+    ) callconv(.Inline) error{Overflow}!void {
         const uartclk = c.clock_get_hz(c.clk_peri);
 
         // Baud rate divisor = uartclk/(16 * baud rate) (float) = BrdI + BrdF
@@ -89,9 +96,12 @@ pub const Uart = extern struct {
 
         // Because the divisor is an integer we can derive its integer component by dividing the divisor by 128.
         // This results in the value (int)(uartclk/(16 * baud rate)) = BrdI.
-        const brdi = std.math.clamp(try std.math.cast(u16, divisor / 128), 1, std.math.maxInt(u16));
+        const brdi = switch (try std.math.cast(u16, divisor / 128)) {
+            0 => 1,
+            else => |val| val
+        };
 
-        // See above for brdf. Note that truncading the divisor to a u7 is the same as taking its
+        // See above for brdf. Note that truncating the divisor to a u7 is the same as taking its
         // mod 128 value. Because we divide by 2 we guarantee that the value fits in a u6.
         const brdf = @intCast(u6, (@truncate(u7, divisor) + 1) >> 1);
 
@@ -99,13 +109,13 @@ pub const Uart = extern struct {
         // Note also brdi must not be 0. If brdi is 1, brdf is ignored.
         this.regs.ibrd.writeAllBits(brdi);
 
-        if (brdi == std.math.maxInt(u16)) {
-            this.regs.fbrd.writeAllBits(0);
-        } else {
-            this.regs.fbrd.writeAllBits(brdf);
+        switch (brdi) {
+            0xFFFF => this.regs.fbrd.writeAllBits(0),
+            else => this.regs.fbrd.writeAllBits(brdf)
         }
 
-        // Program LCR to set baud rate. This must be done before enabling the UART.
+        // Program LCR to set baud rate divisor. This must be done before enabling the UART.
+        // Of course the LCR also contains parity bits, break condition, stop bits, word length, and FIFO enable.
         const parity_as_int = @enumToInt(parity);
 
         this.regs.lcr_h.setBits(.{
