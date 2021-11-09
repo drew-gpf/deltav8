@@ -36,6 +36,8 @@ Although you will need NMake in your path.
 
 On VSCode, it will help to install the default CMake extensions provided by the text editor. This will perform the above steps for you and streamline the build process. To use NMake on Windows, go to File -> Preferences -> Settings, search "cmake" and under "Workspace" look for an option called "Generator"; set it to "NMake Makefiles".
 
+To flash the output file (build/deltav8.uf2) see the [official instructions](https://www.raspberrypi.com/documentation/microcontrollers/c_sdk.html).
+
 # Electrical
 For now, connect the TF Luna's RX pin to GPIO0 and the TX pin to GPIO1. Both of these pins must be connected for when the microcontroller is turned on. The remaining pins that aren't used for power can be ignored. Make sure they're never connected to anything.
 
