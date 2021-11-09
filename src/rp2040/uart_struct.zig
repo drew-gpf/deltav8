@@ -1,3 +1,5 @@
+// zig fmt: off
+
 //! uart_struct.zig: ARM PL011 UART register layout and definitions
 //! Copyright (C) 2021 Drew P.
 

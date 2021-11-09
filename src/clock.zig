@@ -1,3 +1,5 @@
+// zig fmt: off
+
 //! clock.zig: Clock configuration for power saving
 //! Copyright (C) 2021 Drew P.
 
@@ -14,6 +16,8 @@
 //! You should have received a copy of the GNU General Public License along
 //! with this program; if not, write to the Free Software Foundation, Inc.,
 //! 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+// zig fmt: on
 
 const c = @cImport({
     @cInclude("pico/stdlib.h");

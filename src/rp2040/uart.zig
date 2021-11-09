@@ -1,3 +1,5 @@
+// zig fmt: off
+
 //! uart.zig: ARM PL011 UART interface for the RP2040
 //! Copyright (C) 2021 Drew P.
 
@@ -14,6 +16,8 @@
 //! You should have received a copy of the GNU General Public License along
 //! with this program; if not, write to the Free Software Foundation, Inc.,
 //! 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+// zig fmt: on
 
 const std = @import("std");
 const uart_struct = @import("uart_struct.zig");
@@ -44,23 +48,23 @@ pub const Uart = extern struct {
 
     /// Initialize this UART. This must be called before other functions.
     /// Note that UARTs depend on the peripheral and system clocks.
-    pub fn init(this: *Uart) callconv(.Inline) !void {
+    pub inline fn init(this: *Uart) !void {
         // Make sure the peripheral clock is enabled as the UARTs depend on it.
         if (c.clock_get_hz(c.clk_peri) == 0) return error.PeriClockDisabled;
         this.reset();
     }
 
     /// Reset this UART. It must be re-enabled before being usable again.
-    pub fn reset(this: *Uart) callconv(.Inline) void {
-        const reset_bit = if (this == uart0) uart0_reset_bit else
-                          if (this == uart1) uart1_reset_bit else
-                          unreachable;
+    pub inline fn reset(this: *Uart) void {
+        const reset_bit = if (this == uart0) uart0_reset_bit else if (this == uart1) uart1_reset_bit else unreachable;
 
         // Assert this UART's reset pins using the RP2040's interface
         reset_reg.orFull(reset_bit);
         reset_reg.clearFull(reset_bit);
         while (resets_hw.reset_done & reset_bit == 0) asm volatile ("" ::: "memory");
     }
+
+    // zig fmt: off
 
     /// Enable this UART for general use. This function must be called before calling other functions, but must be called after init() or reset().
     /// This function returns an error if an accurate baud rate could not be set.
@@ -132,28 +136,30 @@ pub const Uart = extern struct {
         this.regs.cr.orBits(.{ .uart_en = 1 });
     }
 
+    // zig fmt: on
+
     /// Enable or disable RX or TX. By default both are disabled.
-    pub fn setTxRx(this: *Uart, tx_en: bool, rx_en: bool) callconv(.Inline) void {
+    pub inline fn setTxRx(this: *Uart, tx_en: bool, rx_en: bool) void {
         this.regs.cr.setBits(.{ .rxe = @boolToInt(rx_en), .txe = @boolToInt(tx_en) });
     }
 
     /// Enable RX capabilities. This must be called before reading.
-    pub fn enableRx(this: *Uart) callconv(.Inline) void {
+    pub inline fn enableRx(this: *Uart) void {
         this.regs.cr.orBits(.{ .rxe = 1 });
     }
 
     /// Enable TX capabilities. This must be called before writing.
-    pub fn enableTx(this: *Uart) callconv(.Inline) void {
+    pub inline fn enableTx(this: *Uart) void {
         this.regs.cr.orBits(.{ .txe = 1 });
     }
 
     /// Disable RX capabilities. Do not perform reads after this function call.
-    pub fn disableRx(this: *Uart) callconv(.Inline) void {
+    pub inline fn disableRx(this: *Uart) void {
         this.regs.cr.clearBits(.{ .rxe = 0 });
     }
 
     /// Disable TX capabilities. Do not perform writes after this function call.
-    pub fn disableTx(this: *Uart) callconv(.Inline) void {
+    pub inline fn disableTx(this: *Uart) void {
         this.regs.cr.clearBits(.{ .txe = 0 });
     }
 
@@ -162,7 +168,7 @@ pub const Uart = extern struct {
     /// to reach the programmed level; if enough time has elapsed for four characters to be transmitted after
     /// initially receiving a transmission, it will trigger the IRQ.
     /// If the FIFO is disabled, any level is acceptable for the fifo level.
-    pub fn setRxIrq(this: *Uart, level_opt: ?FifoLevel, timeout_irq: bool) callconv(.Inline) void {
+    pub inline fn setRxIrq(this: *Uart, level_opt: ?FifoLevel, timeout_irq: bool) void {
         if (level_opt) |level| {
             this.regs.ifls.setBits(.{ .rx_ifl_sel = level });
             this.regs.imsc.setBits(.{ .rxim = 1, .rtim = @boolToInt(timeout_irq) });
@@ -174,7 +180,7 @@ pub const Uart = extern struct {
     /// Enable the UART's TX IRQ for the specified level, or null for no irq.
     /// Note the IRQ is only triggered due to the TX FIFO being popped, or the hold register being transmitted.
     /// If the FIFO is disabled, any level is acceptable for the fifo level.
-    pub fn setTxIrq(this: *Uart, level_opt: ?FifoLevel) callconv(.Inline) void {
+    pub inline fn setTxIrq(this: *Uart, level_opt: ?FifoLevel) void {
         if (level_opt) |level| {
             this.regs.ifls.setBits(.{ .tx_ifl_sel = level });
             this.regs.imsc.setBits(.{ .txim = 1 });
@@ -184,38 +190,38 @@ pub const Uart = extern struct {
     }
 
     /// Get masked IRQ status (UARTMIS). Each bit set indicates that the IRQ had just been triggered.
-    pub fn getIrqStatus(this: *Uart) callconv(.Inline) Imsc {
+    pub inline fn getIrqStatus(this: *Uart) Imsc {
         return this.regs.mis.readBits();
     }
 
     /// Get whether or not the UART is transmitting data, or is waiting to transmit data from the TX FIFO queue.
-    pub fn isBusy(this: *Uart) callconv(.Inline) bool {
+    pub inline fn isBusy(this: *Uart) bool {
         return this.regs.fr.readBits().busy != 0;
     }
 
     /// Get whether or not the TX FIFO is full
-    pub fn isTxFifoFull(this: *Uart) callconv(.Inline) bool {
+    pub inline fn isTxFifoFull(this: *Uart) bool {
         return this.regs.fr.readBits().txff != 0;
     }
 
     /// Get whether or not the TX FIFO is empty. Note that it still might be transmitting data; see isBusy.
-    pub fn isTxFifoEmpty(this: *Uart) callconv(.Inline) bool {
+    pub inline fn isTxFifoEmpty(this: *Uart) bool {
         return this.regs.fr.readBits().txfe != 0;
     }
 
     /// Get whether or not the RX FIFO is full.
-    pub fn isRxFifoFull(this: *Uart) callconv(.Inline) bool {
+    pub inline fn isRxFifoFull(this: *Uart) bool {
         return this.regs.fr.readBits().rxff != 0;
     }
 
     /// Get whether or not the RX FIFO is empty. Note that the UART may still be receiving characters.
-    pub fn isRxFifoEmpty(this: *Uart) callconv(.Inline) bool {
+    pub inline fn isRxFifoEmpty(this: *Uart) bool {
         return this.regs.fr.readBits().rxfe != 0;
     }
 
     /// Get the frame register (fr). This is recommended if multiple flags must be checked at once,
     /// as multiple reads of the frame register otherwise have to occur.
-    pub fn getFr(this: *Uart) callconv(.Inline) Fr {
+    pub inline fn getFr(this: *Uart) Fr {
         return this.regs.fr.readBits();
     }
 
@@ -226,7 +232,7 @@ pub const Uart = extern struct {
     /// This will not read error bits.
     /// To perform a blocking read (usually outside of an IRQ) see getReader().
     /// Note however that the reader will work on byte-sized slices.
-    pub fn readByte(this: *Uart) callconv(.Inline) u8 {
+    pub inline fn readByte(this: *Uart) u8 {
         return this.regs.dr.readBits().data;
     }
 
@@ -236,21 +242,19 @@ pub const Uart = extern struct {
     /// To perform a blocking write (usually outside of an IRQ) see getWriter().
     /// Note however that the writer will write byte-sized values, so it is generally unrecommended
     /// if the word length is less than 8 bytes.
-    pub fn writeByte(this: *Uart, val: u8) callconv(.Inline) void {
+    pub inline fn writeByte(this: *Uart, val: u8) void {
         this.regs.dr.writeFull(val);
     }
 
-
     /// Get a blocking byte writer for this UART
-    pub fn getWriter(this: *Uart) callconv(.Inline) Writer {
+    pub inline fn getWriter(this: *Uart) Writer {
         return Writer{ .context = this };
     }
 
     /// Get a blocking byte reader for this UART
-    pub fn getReader(this: *Uart) callconv(.Inline) Reader {
+    pub inline fn getReader(this: *Uart) Reader {
         return Reader{ .context = this };
     }
-
 
     pub const WriteError = error{};
     pub const Writer = std.io.Writer(*Uart, WriteError, writeFn);
@@ -280,6 +284,8 @@ pub const Uart = extern struct {
 pub const uart0 = @intToPtr(*Uart, 0x40034000);
 pub const uart1 = @intToPtr(*Uart, 0x40038000);
 
+// zig fmt: off
+
 pub const StopBits = enum(u1) {
     one,
     two
@@ -302,3 +308,5 @@ pub const ParityCheck = enum(u3) {
     /// Parity bit always 0 (zero)
     zero = 0b111,
 };
+
+// zig fmt: on

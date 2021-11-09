@@ -1,3 +1,5 @@
+// zig fmt: off
+
 //! logger.zig: std.log.*** implementation
 //! Copyright (C) 2021 Drew P.
 
@@ -15,6 +17,8 @@
 //! with this program; if not, write to the Free Software Foundation, Inc.,
 //! 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+// zig fmt: on
+
 const std = @import("std");
 
 const c = @cImport({
@@ -22,7 +26,7 @@ const c = @cImport({
     @cInclude("pico/stdlib.h");
 });
 
-const LogContext = struct{};
+const LogContext = struct {};
 const LogError = error{StdoutEof};
 
 const Logger = std.io.Writer(LogContext, LogError, logWrite);
@@ -48,13 +52,13 @@ fn logWrite(context: LogContext, bytes: []const u8) LogError!usize {
     _ = context;
 
     // STOP ZIG FROM UNROLLING THIS INTO A GIANT SERIES OF PUTCHARS
-    try @call(.{ .modifier = .never_inline }, logWriteImpl, .{ bytes });
+    try @call(.{ .modifier = .never_inline }, logWriteImpl, .{bytes});
 
     return bytes.len;
 }
 
 /// Print to stdout. This does not know if stdio was initialized or if it's available.
-pub fn log(comptime fmt: []const u8, args: anytype) callconv(.Inline) LogError!void {
+pub inline fn log(comptime fmt: []const u8, args: anytype) LogError!void {
     if (stdio_enabled)
         try logger.print(fmt, args);
 }
@@ -67,9 +71,7 @@ pub fn initLogger() void {
 }
 
 /// Whether or not there are potential stdio listeners.
-pub const stdio_enabled = (@hasDecl(c, "LIB_PICO_STDIO_UART") and c.LIB_PICO_STDIO_UART == 1) 
-    or (@hasDecl(c, "LIB_PICO_STDIO_USB") and c.LIB_PICO_STDIO_USB == 1)
-    or (@hasDecl(c, "LIB_PICO_STDIO_SEMIHOSTING") and c.LIB_PICO_STDIO_SEMIHOSTING == 1);
+pub const stdio_enabled = (@hasDecl(c, "LIB_PICO_STDIO_UART") and c.LIB_PICO_STDIO_UART == 1) or (@hasDecl(c, "LIB_PICO_STDIO_USB") and c.LIB_PICO_STDIO_USB == 1) or (@hasDecl(c, "LIB_PICO_STDIO_SEMIHOSTING") and c.LIB_PICO_STDIO_SEMIHOSTING == 1);
 
 comptime {
     if (@hasDecl(c, "LIB_PICO_STDIO_UART") and c.LIB_PICO_STDIO_UART == 1) @compileError("stdio via UART is not supported; use USB instead.");

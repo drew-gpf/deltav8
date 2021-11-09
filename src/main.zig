@@ -1,3 +1,5 @@
+// zig fmt: off
+
 //! main.zig: deltav8 entry point
 //! Copyright (C) 2021 Drew P.
 
@@ -14,6 +16,8 @@
 //! You should have received a copy of the GNU General Public License along
 //! with this program; if not, write to the Free Software Foundation, Inc.,
 //! 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+// zig fmt: on
 
 const std = @import("std");
 const logger = @import("logger.zig");
@@ -50,7 +54,7 @@ export fn main() void {
     // I should probably "figure out" (try and find out) which clocks need to be enabled
     //clock.configureClocks();
     logger.initLogger();
-    
+
     // Init the sensor and the accompanying UART
     uart.init();
 

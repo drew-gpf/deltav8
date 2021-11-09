@@ -1,3 +1,5 @@
+// zig fmt: off
+
 //! build.zig: main build script for Zig code. Do not execute this directly; it relies on args given by zig_runner,
 //! which relies on compiler flags given by CMake to determine the environment.
 //! Copyright (C) 2021 Drew P.
@@ -15,6 +17,8 @@
 //! You should have received a copy of the GNU General Public License along
 //! with this program; if not, write to the Free Software Foundation, Inc.,
 //! 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+// zig fmt: on
 
 const std = @import("std");
 const CrossTarget = std.zig.CrossTarget;
@@ -44,7 +48,7 @@ pub fn build(b: *std.build.Builder) !void {
 
         build_root_dir.makeDir("out") catch |e| switch (e) {
             error.PathAlreadyExists => {},
-            else => return e
+            else => return e,
         };
     }
 
@@ -77,7 +81,7 @@ pub fn build(b: *std.build.Builder) !void {
             };
 
             const val_str = if (def.len != name_str.len) blk: {
-                break :blk def[name_str.len+1..];
+                break :blk def[name_str.len + 1 ..];
             } else null;
 
             obj.defineCMacro(name_str, val_str);

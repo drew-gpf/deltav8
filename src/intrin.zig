@@ -1,3 +1,5 @@
+// zig fmt: off
+
 //! intrin.zig: small collection of ARM instructions
 //! Copyright (C) 2021 Drew P.
 
@@ -15,17 +17,19 @@
 //! with this program; if not, write to the Free Software Foundation, Inc.,
 //! 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+// zig fmt: on
+
 /// Disable IRQs.
-pub fn cpsidi() callconv(.Inline) void {
-    asm volatile("CPSID i" ::: "memory");
+pub inline fn cpsidi() void {
+    asm volatile ("CPSID i" ::: "memory");
 }
 
 /// Enable IRQs.
-pub fn cpsiei() callconv(.Inline) void {
-    asm volatile("CPSIE i" ::: "memory");
+pub inline fn cpsiei() void {
+    asm volatile ("CPSIE i" ::: "memory");
 }
 
 /// Wait for next IRQ.
-pub fn wfi() callconv(.Inline) void {
-    asm volatile("WFI" ::: "memory");
+pub inline fn wfi() void {
+    asm volatile ("WFI" ::: "memory");
 }

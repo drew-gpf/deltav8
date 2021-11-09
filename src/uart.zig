@@ -1,3 +1,5 @@
+// zig fmt: off
+
 //! uart.zig: utils for easily querying data from devices connected to UART hardware
 //! Copyright (C) 2021 Drew P.
 
@@ -14,6 +16,8 @@
 //! You should have received a copy of the GNU General Public License along
 //! with this program; if not, write to the Free Software Foundation, Inc.,
 //! 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+// zig fmt: on
 
 const std = @import("std");
 const intrin = @import("intrin.zig");
@@ -32,7 +36,7 @@ pub const TfLunaPacket = extern union {
     fields: packed struct {
         /// Distance, in centimeters, to nearest target.
         dist: u16,
-        
+
         /// Signal strength, higher is better. Distance is invalid if equal to 65535 or is less than 100.
         strength: u16,
 
@@ -82,7 +86,7 @@ pub fn init() void {
         fatalError("Failed to enable UART0: {}", .{e});
     };
 
-    // Before enabling RX we set the RX communication IRQ which is used to avoid timing issues 
+    // Before enabling RX we set the RX communication IRQ which is used to avoid timing issues
     c.irq_set_exclusive_handler(luna_uart_irq, lunaUartCommIrq);
     c.irq_set_enabled(luna_uart_irq, true);
     luna_uart.setRxIrq(.eighth, true);
@@ -92,14 +96,14 @@ pub fn init() void {
 
     // Set the sensor to a known state. We configure it to use an 8 byte header which allows each packet to
     // trigger an RX IRQ without waiting.
-    enableChecksum() catch |e| fatalError("Failed to enable checksum mode: {}", .{ e });
+    enableChecksum() catch |e| fatalError("Failed to enable checksum mode: {}", .{e});
     std.log.debug("Enabled checksum verification", .{});
 
-    setOutputFmt(.eight_byte_cm) catch |e| fatalError("Failed to set output mode: {}", .{ e });
+    setOutputFmt(.eight_byte_cm) catch |e| fatalError("Failed to set output mode: {}", .{e});
     std.log.debug("Set output mode", .{});
 
     // Default 100Hz
-    setOutputFreq(100) catch |e| fatalError("Failed to set output frequency: {}", .{ e });
+    setOutputFreq(100) catch |e| fatalError("Failed to set output frequency: {}", .{e});
     std.log.debug("Set output frequency", .{});
 
     // Disable RX and TX temporarily
@@ -133,7 +137,7 @@ pub fn getUartSleepEn() u64 {
 
 /// Get most recent data packet from the TF Luna, or null if none available.
 /// Interrupts must be disabled when entering with function to avoid race conditions.
-pub fn getNextLuna() callconv(.Inline) ?TfLunaPacket {
+pub inline fn getNextLuna() ?TfLunaPacket {
     if (luna_data_valid) {
         luna_data_valid = false;
         return current_luna_data;
@@ -142,41 +146,42 @@ pub fn getNextLuna() callconv(.Inline) ?TfLunaPacket {
     return null;
 }
 
-
 /// Reset the sensor.
-fn resetSensor() callconv(.Inline) !void {
+inline fn resetSensor() !void {
     if (getLunaResponse(void, {}, u8, 2) != 0) return error.FailedToReset;
 }
 
 /// Enable checksum verification of transmitted data.
-fn enableChecksum() callconv(.Inline) !void {
+inline fn enableChecksum() !void {
     if (getLunaResponse(u8, 1, u8, 8) != 1) return error.FailedToEnableChecksum;
 }
 
 /// Change output format.
-fn setOutputFmt(fmt: OutputFmt) callconv(.Inline) !void {
+inline fn setOutputFmt(fmt: OutputFmt) !void {
     if (getLunaResponse(u8, @enumToInt(fmt), u8, 5) != @enumToInt(fmt)) return error.FailedToSetOutputFmt;
 }
 
 /// Reset saved settings.
-fn restoreDefault() callconv(.Inline) !void {
+inline fn restoreDefault() !void {
     if (getLunaResponse(void, {}, u8, 0x10) != 0) return error.FailedToRestoreDefaults;
 }
 
 /// Save current settings.
-fn save() callconv(.Inline) !void {
+inline fn save() !void {
     if (getLunaResponse(void, {}, u8, 0x11) != 0) return error.FailedToSaveSettings;
 }
 
 /// Set a new output frequency, and verify the frequency was actually set.
-fn setOutputFreq(freq: u16) callconv(.Inline) !void {
+inline fn setOutputFreq(freq: u16) !void {
     if (getLunaResponse(u16, freq, u16, 3) != freq) return error.FailedToSetFreq;
 }
 
 /// Toggle data output.
-fn toggleOutput(enable: bool) callconv(.Inline) !void {
+inline fn toggleOutput(enable: bool) !void {
     if (getLunaResponse(u8, @boolToInt(enable), u8, 7) != @boolToInt(enable)) return error.FailedToToggleOutput;
 }
+
+// zig fmt: off
 
 const OutputFmt = enum(u8) {
     /// Standard 9-byte header with cm measurement
@@ -187,7 +192,6 @@ const OutputFmt = enum(u8) {
 
     /// Standard 9-byte header with mm measurement
     nine_byte_mm = 6,
-
     /// 11-byte header with 4-byte timestamp
     eleven_byte_timestamp,
 
@@ -197,6 +201,8 @@ const OutputFmt = enum(u8) {
     /// 8-byte header with cm measurement
     eight_byte_cm
 };
+
+// zig fmt: on
 
 /// Wait for a standard response from the TF-Luna.
 /// This will send a header byte, computed len, id, data_out (if not void), and computed checksum.
@@ -270,7 +276,7 @@ fn getLunaResponse(comptime DataOut: type, data_out: DataOut, comptime DataIn: t
     // Read data.
     if (@sizeOf(DataIn) > 0) {
         var ret: DataIn = undefined;
-        std.mem.copy(u8, std.mem.asBytes(&ret), potential_header[3..potential_header.len-1]);
+        std.mem.copy(u8, std.mem.asBytes(&ret), potential_header[3 .. potential_header.len - 1]);
 
         return ret;
     }
@@ -326,11 +332,11 @@ fn lunaUartCommIrq() callconv(.C) void {
                 CommState.current_idx += 1;
 
                 if (CommState.current_idx == potential_header.len) {
-                    const checksum = potential_header[potential_header.len-1];
+                    const checksum = potential_header[potential_header.len - 1];
                     const calculated_checksum = check: {
                         var temp: u8 = 0;
 
-                        for (potential_header[0..potential_header.len-1]) |byte| {
+                        for (potential_header[0 .. potential_header.len - 1]) |byte| {
                             temp +%= byte;
                         }
 
@@ -409,7 +415,7 @@ fn lunaUartIrq() callconv(.C) void {
     while (!luna_uart.isRxFifoEmpty()) _ = luna_uart.readByte();
 }
 
-fn fatalError(comptime reason: []const u8, args: anytype) callconv(.Inline) noreturn {
+inline fn fatalError(comptime reason: []const u8, args: anytype) noreturn {
     // Flash the LED
     c.gpio_init(c.PICO_DEFAULT_LED_PIN);
     c.gpio_set_dir(c.PICO_DEFAULT_LED_PIN, true);

@@ -1,3 +1,5 @@
+// zig fmt: off
+
 //! zig_runner.zig: a small program to interpret the CC command line which we give to the final build script.
 //! Copyright (C) 2021 Drew P.
 
@@ -15,6 +17,8 @@
 //! with this program; if not, write to the Free Software Foundation, Inc.,
 //! 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+// zig fmt: on
+
 const std = @import("std");
 
 pub fn main() !u8 {
@@ -31,7 +35,7 @@ pub fn main() !u8 {
     // In either case we will build the object file verbaitim as we're subverting all C compilation.
     // todo: this is stupid but it works for now
     // todo: we can cache all of this in zig-cache since it needs to be deleted when cmake is ran
-    if (std.ascii.endsWithIgnoreCase(args[args.len-1], "cmake_dummy.c")) {
+    if (std.ascii.endsWithIgnoreCase(args[args.len - 1], "cmake_dummy.c")) {
         var build_args = std.ArrayList([]const u8).init(allocator);
         defer build_args.deinit();
 
@@ -44,7 +48,7 @@ pub fn main() !u8 {
             std.fs.path.dirname(args[0]) orelse unreachable, // util/zig-out/bin
             "..", // util/zig-out
             "..", // util
-            ".." // <root>
+            "..", // <root>
         });
 
         // We know the C compiler but we need to grep for its search prefix. The standard way to do this
@@ -110,7 +114,7 @@ pub fn main() !u8 {
                     }
                 }
 
-                std.log.err("Failed to find search prefix. Full GCC output:\n{s}", .{ stderr });
+                std.log.err("Failed to find search prefix. Full GCC output:\n{s}", .{stderr});
                 return error.FailedToFindSearchPrefix;
             };
 
@@ -130,7 +134,7 @@ pub fn main() !u8 {
             // We also want to look for the CMake release type so it can be specified.
             if (arg.len > 2) {
                 if (std.mem.startsWith(u8, arg, "-I")) {
-                    try build_args.append(try std.fmt.allocPrint(allocator, "-Dinclude-dirs={s}", .{ arg[2..] }));
+                    try build_args.append(try std.fmt.allocPrint(allocator, "-Dinclude-dirs={s}", .{arg[2..]}));
                 } else if (std.mem.startsWith(u8, arg, "-D")) {
                     const def = arg[2..];
                     const cmake_build_type_str = "PICO_CMAKE_BUILD_TYPE";
@@ -138,8 +142,8 @@ pub fn main() !u8 {
                     // PICO_CMAKE_BUILD_TYPE incidentally contains the CMake build type so we can specify it here.
                     if (std.mem.startsWith(u8, def, cmake_build_type_str)) {
                         // Skip the =" sequence following PICO_CMAKE_BUILD_TYPE
-                        const build_type_base = def[cmake_build_type_str.len+2..];
-                        const build_type_str = build_type_base[0..build_type_base.len-1];
+                        const build_type_base = def[cmake_build_type_str.len + 2 ..];
+                        const build_type_str = build_type_base[0 .. build_type_base.len - 1];
 
                         // Debug -> null
                         // Release -> -Drelease-fast
@@ -156,7 +160,7 @@ pub fn main() !u8 {
                         } else unreachable;
                     }
 
-                    try build_args.append(try std.fmt.allocPrint(allocator, "-Ddefs={s}", .{ def }));
+                    try build_args.append(try std.fmt.allocPrint(allocator, "-Ddefs={s}", .{def}));
                 }
             }
         }

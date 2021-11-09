@@ -1,3 +1,5 @@
+// zig fmt: off
+
 //! build.zig: builder for utils like zig_runner
 //! Copyright (C) 2021 Drew P.
 
@@ -15,6 +17,8 @@
 //! with this program; if not, write to the Free Software Foundation, Inc.,
 //! 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+// zig fmt: on
+
 const std = @import("std");
 
 pub fn build(b: *std.build.Builder) !void {
@@ -22,6 +26,10 @@ pub fn build(b: *std.build.Builder) !void {
     const mode = b.standardReleaseOptions();
 
     const exe = b.addExecutable("zig_runner", "zig_runner.zig");
+    const fmt_step = b.addFmt(&[_][]const u8{"zig_runner.zig"});
+
+    // For such a small program as zig_runner we can make the install step depend on running zig fmt
+    b.getInstallStep().dependOn(&fmt_step.step);
 
     exe.setTarget(target);
     exe.setBuildMode(mode);
