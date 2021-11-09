@@ -26,7 +26,7 @@ pub fn build(b: *std.build.Builder) !void {
     const mode = b.standardReleaseOptions();
 
     const exe = b.addExecutable("zig_runner", "zig_runner.zig");
-    const fmt_step = b.addFmt(&[_][]const u8{"zig_runner.zig"});
+    const fmt_step = b.addFmt(&[_][]const u8{ "zig_runner.zig", "build.zig" });
 
     // For such a small program as zig_runner we can make the install step depend on running zig fmt
     b.getInstallStep().dependOn(&fmt_step.step);
