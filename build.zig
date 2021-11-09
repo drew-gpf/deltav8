@@ -1,24 +1,20 @@
-// zig fmt: off
-
 //! build.zig: main build script for Zig code. Do not execute this directly; it relies on args given by zig_runner,
 //! which relies on compiler flags given by CMake to determine the environment.
 //! Copyright (C) 2021 Drew P.
-
+//!
 //! This program is free software; you can redistribute it and/or modify
 //! it under the terms of the GNU General Public License as published by
 //! the Free Software Foundation; either version 2 of the License, or
 //! (at your option) any later version.
-
+//!
 //! This program is distributed in the hope that it will be useful,
 //! but WITHOUT ANY WARRANTY; without even the implied warranty of
 //! MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 //! GNU General Public License for more details.
-
+//!
 //! You should have received a copy of the GNU General Public License along
 //! with this program; if not, write to the Free Software Foundation, Inc.,
 //! 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-
-// zig fmt: on
 
 const std = @import("std");
 const CrossTarget = std.zig.CrossTarget;
