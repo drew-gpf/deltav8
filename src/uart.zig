@@ -90,7 +90,7 @@ pub fn init() void {
     luna_uart.setTxRx(true, true);
     std.log.debug("Initialized UART0", .{});
 
-    // Set the sensor to a known state. We configure it to use a 8 byte header which allows each packet to
+    // Set the sensor to a known state. We configure it to use an 8 byte header which allows each packet to
     // trigger an RX IRQ without waiting.
     enableChecksum() catch |e| fatalError("Failed to enable checksum mode: {}", .{ e });
     std.log.debug("Enabled checksum verification", .{});
