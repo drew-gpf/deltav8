@@ -2,7 +2,7 @@
 A motor control/break actuation system for the Raspberry Pi Pico using the RP2040 SOC with a TF-Luna LiDAR sensor (GPIO 0 and 1 allocated to UART0).
 
 # Requirements
-The following instructions are intended to be understandable by a student with experience in CMPT 128 and so they may seem simplistic.
+The following instructions are intended to be understandable by a student with experience in CMPT 128.
 
 Generally requires the latest [Zig compiler](https://ziglang.org/download/), [CMake](https://cmake.org/download/) 3.20 or later (will need to use custom triggers for apt), a GCC embedded ARM toolchain compiler (arm-none-eabi), and the [Raspberry Pi Pico SDK](https://github.com/raspberrypi/pico-sdk).
 
@@ -15,17 +15,17 @@ For any platform the latest Zig compiler can be installed trivially by decompres
 On Windows you can get all the required dependencies, including the Pico SDK from [this unofficially supported Windows intaller](https://github.com/ndabas/pico-setup-windows) (see the Releases tag). The included CMake will be the correct version to use with this project.
 
 # Build instructions
-With zig, arm-none-eabi-gcc (and binutils), cmake in the path and PICO_SDK_PATH set to the path of the SDK you downloaded (may be done automatically by scripts mentioned above), one can simply:
+Doing all the above you can just run this from the project root (assuming a UNIX system):
 
 ```
 mkdir build
 cd build
 cmake ..
-make -j<JOBS>
+make
 ```
 
-Where JOBS is of course (NUM_CORES + 1) * HYPER_THREADS; a 10-core CPU with hyperthreading (20 threads) can use 22 jobs, for example. The -j parameter is optional and is only used to decrease compile times.
-Note that on Windows you need to generate NMake Makefiles due to eccentricities with MSBuild. Put simply,
+Or running the equivalent for your preferred build system.
+Note that on Windows you need to generate NMake Makefiles due to eccentricities with MSBuild:
 
 ```
 cmake .. -G "NMake Makefiles"
@@ -34,15 +34,10 @@ nmake
 
 Although you will need NMake in your path.
 
-On VSCode, it will help to install the default CMake extension (CTRL+SHIFT+X, search for "CMake" by twxs, "CMake Tools" by Microsoft). This will perform the above steps for you and streamline the build process. To use NMake on Windows, go to File -> Preferences -> Settings, search "cmake" and under "Workspace" look for an option called "Generator"; set it to "NMake Makefiles".
-
-Building should then just work. Note that building does not work if the GCC cross compiler is installed in a path containing newline or carriage return characters (only applies to UNIX systems).
-
-# Flashing
-The build process should generate a file called deltav8.uf2 in the build folder. Take your RPI Pico and, holding down the BOOTSEL button, plug it into your PC. Drag the deltav8.uf2 file into the new storage device that shows up. This will flash the Pico.
+On VSCode, it will help to install the default CMake extensions provided by the text editor. This will perform the above steps for you and streamline the build process. To use NMake on Windows, go to File -> Preferences -> Settings, search "cmake" and under "Workspace" look for an option called "Generator"; set it to "NMake Makefiles".
 
 # Electrical
-For now, connect the TF Luna's RX pin to GPIO0 and the TX pin to GPIO1. Both of these pins must be connected when the microcontroller is turned on. The remaining pins not used for power can be ignored. Do not power them or short them to anything.
+For now, connect the TF Luna's RX pin to GPIO0 and the TX pin to GPIO1. Both of these pins must be connected for when the microcontroller is turned on. The remaining pins that aren't used for power can be ignored. Make sure they're never connected to anything.
 
 It is normal for a half-second delay to occur if the sensor and the microcontroller are powered on at the same time; this is because of limitations with the sensor.
 
