@@ -2,8 +2,6 @@
 A motor control/break actuation system for the Raspberry Pi Pico using the RP2040 SOC with a TF-Luna LiDAR sensor (GPIO 0 and 1 allocated to UART0).
 
 # Requirements
-The following instructions are intended to be understandable by a student with experience in CMPT 128.
-
 Generally requires the latest [Zig compiler](https://ziglang.org/download/), [CMake](https://cmake.org/download/) 3.20 or later (will need to use custom triggers for apt), a GCC embedded ARM toolchain compiler (arm-none-eabi), and the [Raspberry Pi Pico SDK](https://github.com/raspberrypi/pico-sdk).
 
 If using a Debian-based distro (ex. Ubuntu) or WSL with such a distro you can just follow the [official instructions](https://datasheets.raspberrypi.com/pico/getting-started-with-pico.pdf) to acquire the dependencies (except of course for the Zig compiler), except that as mentioned previously you will need [custom triggers to install the latest CMake](https://askubuntu.com/questions/355565/how-do-i-install-the-latest-version-of-cmake-from-the-command-line).
