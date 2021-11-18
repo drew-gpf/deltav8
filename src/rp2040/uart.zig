@@ -98,12 +98,12 @@ pub const Uart = extern struct {
         // This results in the value (int)(uartclk/(16 * baud rate)) = BrdI.
         const brdi = switch (try std.math.cast(u16, divisor / 128)) {
             0 => 1,
-            else => |val| val
+            else => |val| val,
         };
 
         // See above for brdf. Note that truncating the divisor to a u7 is the same as taking its
         // mod 128 value. Because we divide by 2 we guarantee that the value fits in a u6.
-        const brdf = @intCast(u6, (@truncate(u7, divisor) + 1) >> 1);
+        const brdf = @intCast(u6, (@truncate(u7, divisor) +% 1) >> 1);
 
         // Note that brdi has a max value of 0xFFFF because it's a 16 bit int. If this happens, brdf must be 0.
         // Note also brdi must not be 0. If brdi is 1, brdf is ignored.
