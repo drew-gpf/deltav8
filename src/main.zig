@@ -45,10 +45,8 @@ export fn main() void {
     // to connect the USB cable.
     c.watchdog_enable(if (logger.stdio_enabled) 10000 else 1000, true);
 
-    // Configure system clocks to save power. This must be updated if the RTC or ADC are used,
-    // or if USB is used outside of stdio.
-    // I should probably "figure out" (try and find out) which clocks need to be enabled
-    //clock.configureClocks();
+    // Configure system clocks to save power.
+    clock.configureClocks();
     logger.initLogger();
 
     // Init the sensor and the accompanying UART
