@@ -19,7 +19,6 @@ const std = @import("std");
 const logger = @import("logger.zig");
 const uart = @import("uart.zig");
 const intrin = @import("intrin.zig");
-const clock = @import("clock.zig");
 
 const c = @cImport({
     @cInclude("pico/stdlib.h");
@@ -44,11 +43,6 @@ export fn main() void {
     // If stdio is enabled we use a 10 second timeout instead as UART failures will wait five seconds for someone
     // to connect the USB cable.
     c.watchdog_enable(if (logger.stdio_enabled) 10000 else 1000, true);
-
-    // Configure system clocks to save power. This must be updated if the RTC or ADC are used,
-    // or if USB is used outside of stdio.
-    // I should probably "figure out" (try and find out) which clocks need to be enabled
-    //clock.configureClocks();
     logger.initLogger();
 
     // Init the sensor and the accompanying UART
