@@ -121,6 +121,16 @@ pub fn init() void {
     std.log.debug("UART ready to use", .{});
 }
 
+/// Get SLEEP_ENX bits required for UART functionality when sleeping.
+pub fn getUartSleepEn() u64 {
+    // THE PICO SDK USES MACROS FOR NO REASON THAT BREAK TRANSLATE-C
+    const CLOCKS_SLEEP_EN1_CLK_SYS_UART0_BITS = 0x00000080;
+    const CLOCKS_SLEEP_EN1_CLK_PERI_UART0_BITS = 0x00000040;
+
+    // Also enable watchdog tick (bit 12 of sleep_en1) for the watchdog timer to work
+    return (0) | ((CLOCKS_SLEEP_EN1_CLK_SYS_UART0_BITS | CLOCKS_SLEEP_EN1_CLK_PERI_UART0_BITS | (1 << 12)) << 32);
+}
+
 /// Get most recent data packet from the TF Luna, or null if none available.
 /// Interrupts must be disabled when entering with function to avoid race conditions.
 pub inline fn getNextLuna() ?TfLunaPacket {
