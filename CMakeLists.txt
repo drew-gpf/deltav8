@@ -42,7 +42,7 @@ add_custom_target(fix_zig_obj_file
 
 # Create zig_runner, if needed. This is executed on every make.
 add_custom_target(zig_runner
-    COMMAND zig build -Drelease-safe
+    COMMAND zig build
     WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/util"
 )
 

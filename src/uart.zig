@@ -122,7 +122,7 @@ pub fn init() void {
 }
 
 /// Get most recent data packet from the TF Luna, or null if none available.
-/// Interrupts must be disabled when entering with function to avoid race conditions.
+/// Interrupts must be disabled when entering this function to avoid race conditions.
 pub inline fn getNextLuna() ?TfLunaPacket {
     if (luna_data_valid) {
         luna_data_valid = false;
@@ -178,6 +178,7 @@ const OutputFmt = enum(u8) {
 
     /// Standard 9-byte header with mm measurement
     nine_byte_mm = 6,
+    
     /// 11-byte header with 4-byte timestamp
     eleven_byte_timestamp,
 

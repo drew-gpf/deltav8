@@ -33,7 +33,6 @@ pub fn main() !u8 {
     // todo: we can cache all of this in zig-cache since it needs to be deleted when cmake is ran
     if (std.ascii.endsWithIgnoreCase(args[args.len - 1], "cmake_dummy.c")) {
         var build_args = std.ArrayList([]const u8).init(allocator);
-        defer build_args.deinit();
 
         try build_args.append("zig");
         try build_args.append("build");
@@ -70,7 +69,7 @@ pub fn main() !u8 {
             var should_kill = true;
 
             errdefer if (should_kill) {
-                _ = child.kill() catch {};
+                _ = child.kill() catch |e| std.log.warn("Failed to kill GCC: {}", .{e});
             };
 
             // Get the output. In here, somewhere, is the correct prefix.
@@ -95,14 +94,14 @@ pub fn main() !u8 {
                     if (find_search_prefix) {
                         // Ignore space at the start and go back one directory, while also parsing the
                         // weird ../../ sequences already in the path.
-                        const full_path = try std.fs.path.resolve(allocator, &[_][]const u8{ line[1..], ".." });
+                        const full_path = try std.fs.path.resolve(allocator, &.{ line[1..], ".." });
 
                         // Open this dir to see if it's valid
                         var path_dir = std.fs.openDirAbsolute(full_path, .{}) catch break;
                         defer path_dir.close();
 
                         // If we can access include/stdio.h, this is probably the prefix dir.
-                        path_dir.access(try std.fs.path.join(allocator, &[_][]const u8{ "include", "stdio.h" }), .{}) catch continue;
+                        path_dir.access(try std.fs.path.join(allocator, &.{ "include", "stdio.h" }), .{}) catch continue;
 
                         break :blk full_path;
                     } else if (std.mem.eql(u8, line, "#include <...> search starts here:")) {

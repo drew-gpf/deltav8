@@ -50,7 +50,7 @@ pub fn build(b: *std.build.Builder) !void {
 
     // Make our own output dir instead of using zig-cache as we can't install this object file
     // but need to know where it is for any build.
-    obj.setOutputDir(try std.fs.path.join(b.allocator, &[_][]const u8{ b.build_root, "out" }));
+    obj.setOutputDir(b.pathJoin(&.{ b.build_root, "out" }));
 
     const include_dirs_opt = b.option([]const []const u8, "include-dirs", "List of CC flags for including directories") orelse null;
     const defs_opt = b.option([]const []const u8, "defs", "List of CC flags for preprocessor definitions") orelse null;
