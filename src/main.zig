@@ -20,6 +20,7 @@ const logger = @import("logger.zig");
 const uart = @import("uart.zig");
 const intrin = @import("intrin.zig");
 const clock = @import("clock.zig");
+const adc = @import("adc.zig");
 
 const c = @cImport({
     @cInclude("pico/stdlib.h");
@@ -27,7 +28,7 @@ const c = @cImport({
 });
 
 // Uncomment or change to enable logs for any build mode
-//pub const log_level: std.log.Level = .debug;
+pub const log_level: std.log.Level = .debug;
 
 /// stdlib log handler; no logging is done if stdio is disabled.
 pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral), comptime format: []const u8, args: anytype) void {
@@ -49,6 +50,9 @@ export fn main() void {
     clock.configureClocks();
     logger.initLogger();
 
+    // Init the ADC peripherals first. The UART is initialized last as it could take up to 500ms.
+    adc.init();
+
     // Init the sensor and the accompanying UART
     uart.init();
 
@@ -59,39 +63,36 @@ export fn main() void {
     c.sleep_ms(50);
     c.watchdog_update();
 
+    // Tell the ADC that we're ready to receive samples
+    adc.enableIrqs();
+
     // Set a new, lower watchdog of 50ms which is enough time to transmit 5 data packets.
     // Because we reset independent of the sensor there won't be much time between resets if something randomly goes wrong.
-    c.watchdog_enable(50, true);
+    c.watchdog_enable(if (logger.stdio_enabled) 500 else 50, true);
 
-    // Only for demonstration purposes
-    c.gpio_init(c.PICO_DEFAULT_LED_PIN);
-    c.gpio_set_dir(c.PICO_DEFAULT_LED_PIN, true);
-    c.gpio_put(c.PICO_DEFAULT_LED_PIN, false);
-
-    var led_on = false;
-
+    // Main event loop. We have two peripherals, the sensor and the throttle, continuously trying to give us some data;
+    // the sensor through the UART RX IRQ and the throttle through the ADC's FIFO IRQ.
+    // The sensor runs every ~10ms and the throttle (ADC) runs every ~1ms. To optimize power
+    // we tell the M0+ to sleep until either one of these events occur; we then do something if either
+    // are reporting new information. Following we then just go back to sleep.
+    // n.b.: we'll also get something to report velocity later
     while (true) {
         // Prevent race conditions by masking IRQs; assumes that IRQs are unmasked at this point
         intrin.cpsidi();
 
-        // Try to get the TF Luna packet, this is not guaranteed to return data.
-        const next_luna_opt = uart.getNextLuna();
-
-        if (next_luna_opt) |luna| {
-            if (luna.getValidDist()) |dist| {
-                if (dist < 35) {
-                    if (!led_on) c.gpio_put(c.PICO_DEFAULT_LED_PIN, true);
-                    led_on = true;
-                } else {
-                    if (led_on) c.gpio_put(c.PICO_DEFAULT_LED_PIN, false);
-                    led_on = false;
-                }
-            }
+        if (uart.getNextLuna()) |luna| {
+            _ = luna;
         }
+
+        const throttle_speed_opt = adc.getThrottleSpeed();
 
         // Wait for next IRQ with IRQs masked to prevent the RX IRQ from getting ignored
         intrin.wfi();
         intrin.cpsiei();
+
+        if (throttle_speed_opt) |speed| {
+            std.log.debug("Throttle val: {}", .{speed});
+        }
 
         c.watchdog_update();
     }
