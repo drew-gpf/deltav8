@@ -60,21 +60,19 @@ pub const Uart = extern struct {
         while (resets_hw.reset_done & reset_bit == 0) asm volatile ("" ::: "memory");
     }
 
-    // zig fmt: off
-
     /// Enable this UART for general use. This function must be called before calling other functions, but must be called after init() or reset().
     /// This function returns an error if an accurate baud rate could not be set.
     /// Parity checking applies for both TX and RX.
     /// FIFO enable applies for both TX and RX.
     /// This assumes the UART has not already been enabled.
-    pub fn enable(
+    pub inline fn enable(
         this: *Uart,
         baud_rate: usize,
         parity: ParityCheck,
         stop_bits: StopBits,
         data_bits: WLen,
-        fifo_enable: bool
-    ) callconv(.Inline) error{Overflow}!void {
+        fifo_enable: bool,
+    ) error{Overflow}!void {
         const uartclk = c.clock_get_hz(c.clk_peri);
 
         // Baud rate divisor = uartclk/(16 * baud rate) (float) = BrdI + BrdF
@@ -111,7 +109,7 @@ pub const Uart = extern struct {
 
         switch (brdi) {
             0xFFFF => this.regs.fbrd.writeAllBits(0),
-            else => this.regs.fbrd.writeAllBits(brdf)
+            else => this.regs.fbrd.writeAllBits(brdf),
         }
 
         // Program LCR to set baud rate divisor. This must be done before enabling the UART.
@@ -124,15 +122,13 @@ pub const Uart = extern struct {
             .sps = @truncate(u1, parity_as_int >> 2),
             .stp2 = @enumToInt(stop_bits),
             .wlen = data_bits,
-            .fen = @boolToInt(fifo_enable)
+            .fen = @boolToInt(fifo_enable),
         });
 
         // Enable the UART.
         this.regs.cr.clearBits(.{ .rxe = 0, .txe = 0 });
         this.regs.cr.orBits(.{ .uart_en = 1 });
     }
-
-    // zig fmt: on
 
     /// Enable or disable RX or TX. By default both are disabled.
     pub inline fn setTxRx(this: *Uart, tx_en: bool, rx_en: bool) void {
@@ -280,18 +276,13 @@ pub const Uart = extern struct {
 pub const uart0 = @intToPtr(*Uart, 0x40034000);
 pub const uart1 = @intToPtr(*Uart, 0x40038000);
 
-// zig fmt: off
-
-pub const StopBits = enum(u1) {
-    one,
-    two
-};
+pub const StopBits = enum(u1) { one, two };
 
 /// bit 0 is pen, bit 1 is eps, bit 2 is sps
 pub const ParityCheck = enum(u3) {
     /// No parity check
     none = 0b000,
-    
+
     /// Odd parity
     odd = 0b001,
 
@@ -304,5 +295,3 @@ pub const ParityCheck = enum(u3) {
     /// Parity bit always 0 (zero)
     zero = 0b111,
 };
-
-// zig fmt: on

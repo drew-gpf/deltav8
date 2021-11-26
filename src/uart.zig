@@ -167,8 +167,6 @@ inline fn toggleOutput(enable: bool) !void {
     if (getLunaResponse(u8, @boolToInt(enable), u8, 7) != @boolToInt(enable)) return error.FailedToToggleOutput;
 }
 
-// zig fmt: off
-
 const OutputFmt = enum(u8) {
     /// Standard 9-byte header with cm measurement
     nine_byte_cm = 1,
@@ -178,7 +176,7 @@ const OutputFmt = enum(u8) {
 
     /// Standard 9-byte header with mm measurement
     nine_byte_mm = 6,
-    
+
     /// 11-byte header with 4-byte timestamp
     eleven_byte_timestamp,
 
@@ -186,10 +184,8 @@ const OutputFmt = enum(u8) {
     id_0,
 
     /// 8-byte header with cm measurement
-    eight_byte_cm
+    eight_byte_cm,
 };
-
-// zig fmt: on
 
 /// Wait for a standard response from the TF-Luna.
 /// This will send a header byte, computed len, id, data_out (if not void), and computed checksum.

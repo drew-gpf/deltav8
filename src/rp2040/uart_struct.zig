@@ -15,8 +15,6 @@
 //! with this program; if not, write to the Free Software Foundation, Inc.,
 //! 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-// zig fmt: off
-
 const std = @import("std");
 const reg = @import("reg.zig");
 
@@ -94,7 +92,7 @@ pub const Dr = packed struct {
     data: u8,
 
     // Ignored on writes
-    err: TxRxStatus
+    err: TxRxStatus,
 };
 
 pub const Fr = packed struct {
@@ -116,7 +114,7 @@ pub const Fr = packed struct {
 
     /// TX FIFO or transmit holding register empty. Does not indicate if there is data in the TX shift register.
     txfe: u1,
-    ri: u1
+    ri: u1,
 };
 
 pub const LcrH = packed struct {
@@ -141,7 +139,7 @@ pub const LcrH = packed struct {
     wlen: WLen,
 
     /// Stick parity select. Has no effect if pen = 0. If eps = 1, the parity is transmitted and checked as 0. Otherwise, it is transmitted and checked as 1.
-    sps: u1
+    sps: u1,
 };
 
 pub const Cr = packed struct {
@@ -169,13 +167,13 @@ pub const Cr = packed struct {
     rts_en: u1,
 
     /// If set, CTS hardware control flow is enabled, and data is only transmitted when the nUARTCTS signal is asserted.
-    cts_en: u1
+    cts_en: u1,
 };
 
 pub const Ifls = packed struct {
     /// TX FIFO interrupt level select
     tx_ifl_sel: FifoLevel,
-    
+
     /// RX FIFO interrupt level select
     rx_ifl_sel: FifoLevel,
 };
@@ -206,7 +204,7 @@ pub const Imsc = packed struct {
     beim: u1,
 
     /// Toggle overrun error IRQ
-    oeim: u1
+    oeim: u1,
 };
 
 pub const FifoLevel = enum(u3) {
@@ -223,15 +221,10 @@ pub const FifoLevel = enum(u3) {
     three_quarters,
 
     /// Trigger IRQ when FIFO is >= (RX) <= (TX) 7/8 full (28 bytes)
-    seven_eighths
+    seven_eighths,
 };
 
-pub const WLen = enum(u2) {
-    five,
-    six,
-    seven,
-    eight
-};
+pub const WLen = enum(u2) { five, six, seven, eight };
 
 pub const TxRxStatus = packed struct {
     /// Frame error
@@ -244,5 +237,5 @@ pub const TxRxStatus = packed struct {
     be: u1,
 
     /// Overrun error
-    oe: u1
+    oe: u1,
 };
