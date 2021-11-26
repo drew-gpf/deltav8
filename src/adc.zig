@@ -43,13 +43,13 @@ const throttle_vmin = 1250;
 const throttle_vmax = 2930;
 
 /// No. of seconds per ADC cycle (48MHz)
-const adc_period = 1.0/48E+6;
+const adc_period = 1.0 / 48E+6;
 
 /// No. of seconds per ADC conversion (1ms)
-const throttle_period = 1/1.0E3;
+const throttle_period = 1 / 1.0E3;
 
 /// No. of ADC cycles within a throttle period, subtracted with the n + 1 offset of the ADC hardware.
-const throttle_cycles = throttle_period/adc_period - 1.0;
+const throttle_cycles = throttle_period / adc_period - 1.0;
 
 /// The current (relative) voltage reading of the throttle, from throttle_vmin -> throttle_vmax.
 var current_throttle_voltage: ?u12 = null;
