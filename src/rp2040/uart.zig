@@ -17,6 +17,7 @@
 
 const std = @import("std");
 const uart_struct = @import("uart_struct.zig");
+const intrin = @import("../intrin.zig");
 
 const c = @cImport({
     @cInclude("hardware/resets.h");
@@ -57,7 +58,7 @@ pub const Uart = extern struct {
         // Assert this UART's reset pins using the RP2040's interface
         reset_reg.orFull(reset_bit);
         reset_reg.clearFull(reset_bit);
-        while (resets_hw.reset_done & reset_bit == 0) asm volatile ("" ::: "memory");
+        while (resets_hw.reset_done & reset_bit == 0) intrin.loopHint();
     }
 
     /// Enable this UART for general use. This function must be called before calling other functions, but must be called after init() or reset().
@@ -256,7 +257,7 @@ pub const Uart = extern struct {
 
     fn writeFn(this: *Uart, bytes: []const u8) WriteError!usize {
         for (bytes) |byte| {
-            while (this.isTxFifoFull()) asm volatile ("" ::: "memory");
+            while (this.isTxFifoFull()) intrin.loopHint();
             this.writeByte(byte);
         }
 
@@ -265,7 +266,7 @@ pub const Uart = extern struct {
 
     fn readFn(this: *Uart, bytes: []u8) ReadError!usize {
         for (bytes) |*byte| {
-            while (this.isRxFifoEmpty()) asm volatile ("" ::: "memory");
+            while (this.isRxFifoEmpty()) intrin.loopHint();
             byte.* = this.readByte();
         }
 

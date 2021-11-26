@@ -19,6 +19,7 @@ const std = @import("std");
 const intrin = @import("intrin.zig");
 const uart = @import("rp2040/uart.zig");
 const logger = @import("logger.zig");
+const adc = @import("adc.zig");
 
 const c = @cImport({
     @cInclude("hardware/irq.h");
@@ -27,6 +28,8 @@ const c = @cImport({
 
 const luna_uart = uart.uart0;
 const luna_uart_irq = c.UART0_IRQ;
+
+const motor_uart = uart.uart1;
 
 pub const TfLunaPacket = extern union {
     fields: packed struct {
@@ -47,6 +50,27 @@ pub const TfLunaPacket = extern union {
     }
 };
 
+pub const MotorPacket = extern union {
+    bits: packed struct {
+        speed: MotorSpeed,
+        dir: MotorDir,
+        channel: MotorChannel,
+    },
+    full: u8,
+};
+
+pub const MotorSpeed = u6;
+
+pub const MotorDir = enum(u1) {
+    clockwise,
+    counter_clockwise
+};
+
+pub const MotorChannel = enum(u1) {
+    left,
+    right
+};
+
 comptime {
     const fields = std.meta.fields(TfLunaPacket);
 
@@ -55,6 +79,9 @@ comptime {
 
     if (@sizeOf(fields_type) != @sizeOf(bytes_type) or @sizeOf(fields_type) != 8)
         @compileLog("Invalid size of fields, bytes; must be 8 bytes", @sizeOf(fields_type), @sizeOf(bytes_type));
+
+    if (@sizeOf(MotorPacket) != @sizeOf(u8))
+        @compileLog("Invalid size of motor packet; must be 1 byte", @sizeOf(MotorPacket));
 }
 
 /// The current data packet read from the previous IRQ.
@@ -65,9 +92,45 @@ var luna_data_valid = false;
 
 /// Init required UART devices.
 /// UART0: TF Luna, 115200 baud rate, 8 data bits, 1 stop bit, no parity check, GPIO0 is TX, GPIO1 is RX
-/// UART1: uninitialized
+/// UART1: Motor controller, 115200 baud rate, 8 data bits, 1 stop bit, no parity check, GPIO4 is TX (no RX)
 /// Additionally this will install an IRQ handler for UART0 on the current core.
 pub fn init() void {
+    initLunaUart();
+    initMotorUart();
+}
+
+/// Get most recent data packet from the TF Luna, or null if none available.
+/// Interrupts must be disabled when entering this function to avoid race conditions.
+pub inline fn getNextLuna() ?TfLunaPacket {
+    if (luna_data_valid) {
+        luna_data_valid = false;
+        return current_luna_data;
+    }
+
+    return null;
+}
+
+/// Send a new speed value to the motor. This should be called with IRQs enabled;
+/// this function will wait for the last speed to be transmitted.
+pub inline fn controlSpeed(throttle_voltage: u12, dir: MotorDir, channel: MotorChannel) void {
+    // Compress to a MotorSpeed value by mapping to a MotorSpeed's range of possible values;
+    // out = rel_voltage / (2^(log2(max_rel_voltage) - numBits(MotorSpeed)))
+    // However this operation (without converting to ints and shifting to account for inaccuracies) will introduce floating point operations,
+    // so it is better to simplify it to:
+    // out = rel_voltage / (max_rel_voltage / (maxInt(MotorSpeed) + 1))
+    // out = (rel_voltage * (maxInt(MotorSpeed) + 1)) / max_rel_voltage
+    // out = (rel_voltage << numBits(MotorSpeed)) / max_rel_voltage
+    // This allows us to compute the exact integer value without using costly floating-point math.
+    // Note that voltage must be [vmin, vmax) to prevent overflow
+    const speed = @intCast(MotorSpeed, (std.math.shl(usize, throttle_voltage, std.meta.bitCount(MotorSpeed))) / adc.max_throttle_voltage);
+    const packet = MotorPacket{ .bits = .{ .speed = speed, .dir = dir, .channel = channel } };
+
+    // Wait for the holding register to be transmitted, then send the given packet.
+    while (motor_uart.isTxFifoFull()) intrin.loopHint();
+    motor_uart.writeByte(packet.full);
+}
+
+fn initLunaUart() void {
     // Use GPIO 0, 1 for UART0
     c.gpio_set_function(0, c.GPIO_FUNC_UART);
     c.gpio_set_function(1, c.GPIO_FUNC_UART);
@@ -118,18 +181,23 @@ pub fn init() void {
     luna_uart.setRxIrq(.quarter, true);
     luna_uart.enableRx();
 
-    std.log.debug("UART ready to use", .{});
+    std.log.debug("UART0 ready to use", .{});
 }
 
-/// Get most recent data packet from the TF Luna, or null if none available.
-/// Interrupts must be disabled when entering this function to avoid race conditions.
-pub inline fn getNextLuna() ?TfLunaPacket {
-    if (luna_data_valid) {
-        luna_data_valid = false;
-        return current_luna_data;
-    }
+fn initMotorUart() void {
+    // Use GPIO 4 (TX only) for UART1
+    c.gpio_set_function(4, c.GPIO_FUNC_UART);
 
-    return null;
+    motor_uart.init() catch |e| {
+        fatalError("Failed to init UART1: {}", .{e});
+    };
+
+    motor_uart.enable(115200, .none, .one, .eight, false) catch |e| {
+        fatalError("Failed to enable UART1: {}", .{e});
+    };
+
+    motor_uart.enableTx();
+    std.log.debug("UART1 ready to use", .{});
 }
 
 /// Reset the sensor.
@@ -404,11 +472,11 @@ inline fn fatalError(comptime reason: []const u8, args: anytype) noreturn {
     c.gpio_set_dir(c.PICO_DEFAULT_LED_PIN, true);
     c.gpio_put(c.PICO_DEFAULT_LED_PIN, true);
 
-    if (logger.stdio_enabled) {
-        c.sleep_ms(5000);
+    // Send message infinitely and wait to get killed by the watchdog
+    while (true) {
         std.log.warn(reason, args);
-    }
+        c.sleep_ms(50);
 
-    // Wait to get killed by the watchdog
-    while (true) {}
+        intrin.loopHint();
+    }
 }

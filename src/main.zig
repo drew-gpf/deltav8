@@ -84,16 +84,18 @@ export fn main() void {
             _ = luna;
         }
 
-        const throttle_speed_opt = adc.getThrottleSpeed();
+        const throttle_voltage_opt = adc.getThrottleVoltage();
 
         // Wait for next IRQ with IRQs masked to prevent the RX IRQ from getting ignored
         intrin.wfi();
         intrin.cpsiei();
 
-        if (throttle_speed_opt) |speed| {
-            std.log.debug("Throttle val: {}", .{speed});
+        if (throttle_voltage_opt) |voltage| {
+            std.log.debug("Throttle val: {}", .{voltage});
+            uart.controlSpeed(voltage, .clockwise, .left);
         }
 
+        // todo: update watchdog to indicate that all components have responded
         c.watchdog_update();
     }
 }

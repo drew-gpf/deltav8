@@ -29,3 +29,8 @@ pub inline fn cpsiei() void {
 pub inline fn wfi() void {
     asm volatile ("WFI" ::: "memory");
 }
+
+/// A hint to be called to hint to the compiler that a spin loop has side effects and must not be optimized out.
+pub inline fn loopHint() void {
+    asm volatile ("" ::: "memory");
+}
