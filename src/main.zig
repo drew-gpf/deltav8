@@ -40,7 +40,7 @@ pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral),
 
 const decel = 1.108219628;
 const max_vel = 2.882992752;
-const stopping_dist = (max_vel * max_vel)/(2.0 * decel) + 1.0;
+const stopping_dist = (max_vel * max_vel) / (2.0 * decel) + 1.0;
 const stopping_dist_cm = @floatToInt(comptime_int, @round(stopping_dist * 100.0));
 
 comptime {
