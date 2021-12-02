@@ -45,7 +45,7 @@ pub const TfLunaPacket = extern union {
     bytes: [8]u8,
 
     /// Get the distance value, or null if it's invalid.
-    pub fn getValidDist(this: *const TfLunaPacket) ?u16 {
+    pub inline fn getValidDist(this: *const TfLunaPacket) ?u16 {
         return if (this.fields.strength >= 100 and this.fields.strength != 65535) this.fields.dist else null;
     }
 };
