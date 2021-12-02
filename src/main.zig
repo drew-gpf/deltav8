@@ -133,8 +133,6 @@ export fn main() void {
                 luna_response = true;
             }
 
-            was_braking = should_brake;
-
             if (luna.getValidDist()) |dist| {
                 should_brake = dist <= stopping_dist_cm;
             } else {
@@ -154,16 +152,22 @@ export fn main() void {
                 adc_response = true;
             }
 
-            // If we're braking we should always set voltage to 0, and change the motor speed
-            // generically from this. Then, if motor speed turns out to be different
-            // we always change it.
-            last_voltage = current_voltage;
-            current_voltage = if (should_brake) 0 else voltage;
+            current_voltage = voltage;
         }
 
-        const should_set_brake = should_brake != was_braking;
+        // Always reset the current voltage to 0 if we should be braking. This covers the case where
+        // voltage is nonzero but we need to brake and don't have a new throttle voltage,
+        // because we will then set the speed to 0.
+        if (should_brake)
+            current_voltage = 0;
 
-        if (current_voltage != last_voltage) {
+        const should_set_brake = should_brake != was_braking;
+        was_braking = should_brake;
+
+        const should_change_voltage = current_voltage != last_voltage;
+        last_voltage = current_voltage;
+
+        if (should_change_voltage) {
             // If we're releasing the brakes, we should do so before setting speed.
             if (should_set_brake and !should_brake) {
                 std.debug.assert(current_voltage > 0);

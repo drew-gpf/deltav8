@@ -191,6 +191,8 @@ fn initMotorUart() void {
     };
 
     motor_uart.enableTx();
+    controlSpeed(0, .clockwise, .left);
+    
     std.log.debug("UART1 ready to use", .{});
 }
 
