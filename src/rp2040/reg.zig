@@ -35,12 +35,26 @@ pub const AccessConstraints = union(enum) {
 /// The bits type determines the layout of the register. It may be a packed struct or an integer.
 pub fn Reg(comptime Container: type, comptime Bits: type, comptime constraint: AccessConstraints) type {
     comptime {
-        if (@sizeOf(Container) < @sizeOf(Bits)) @compileLog("Register's container is smaller than its bit size. When using a packed struct make sure non power-of-two ints do not exceed 16 bits.", @sizeOf(Container), @sizeOf(Bits));
+        if (@sizeOf(Container) < @sizeOf(Bits)) {
+            @compileLog(
+                "Register's container is smaller than its bit size. When using a packed struct make sure " ++
+                    "non power-of-two ints do not exceed 16 bits.",
+                @sizeOf(Container),
+                @sizeOf(Bits),
+            );
+        }
 
         switch (constraint) {
             .write_to_clear, .read_write_to_clear => |val| {
-                if (val > std.math.maxInt(Container))
-                    @compileLog("Register is marked as write-to-clear but its clear value is larger than can be possibly written to its container.", constraint, val, std.math.maxInt(Container));
+                if (val > std.math.maxInt(Container)) {
+                    @compileLog(
+                        "Register is marked as write-to-clear but its clear value is larger than can be " ++
+                            "possibly written to its container.",
+                        constraint,
+                        val,
+                        std.math.maxInt(Container),
+                    );
+                }
             },
             .read_only, .write_only, .read_write => {},
         }

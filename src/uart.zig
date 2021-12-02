@@ -60,16 +60,8 @@ pub const MotorPacket = extern union {
 };
 
 pub const MotorSpeed = u6;
-
-pub const MotorDir = enum(u1) {
-    clockwise,
-    counter_clockwise
-};
-
-pub const MotorChannel = enum(u1) {
-    left,
-    right
-};
+pub const MotorDir = enum(u1) { clockwise, counter_clockwise };
+pub const MotorChannel = enum(u1) { left, right };
 
 comptime {
     const fields = std.meta.fields(TfLunaPacket);
@@ -112,6 +104,8 @@ pub inline fn getNextLuna() ?TfLunaPacket {
 
 /// Send a new speed value to the motor. This should be called with IRQs enabled;
 /// this function will wait for the last speed to be transmitted.
+/// throttle_voltage is the relative voltage reported by the throttle ADC and must be below
+/// max_throttle_voltage.
 pub inline fn controlSpeed(throttle_voltage: u12, dir: MotorDir, channel: MotorChannel) void {
     // Compress to a MotorSpeed value by mapping to a MotorSpeed's range of possible values;
     // out = rel_voltage / (2^(log2(max_rel_voltage) - numBits(MotorSpeed)))
@@ -121,7 +115,7 @@ pub inline fn controlSpeed(throttle_voltage: u12, dir: MotorDir, channel: MotorC
     // out = (rel_voltage * (maxInt(MotorSpeed) + 1)) / max_rel_voltage
     // out = (rel_voltage << numBits(MotorSpeed)) / max_rel_voltage
     // This allows us to compute the exact integer value without using costly floating-point math.
-    // Note that voltage must be [vmin, vmax) to prevent overflow
+    // Note that voltage must be [0, max_rel_voltage) to prevent overflow with @intCast().
     const speed = @intCast(MotorSpeed, (std.math.shl(usize, throttle_voltage, std.meta.bitCount(MotorSpeed))) / adc.max_throttle_voltage);
     const packet = MotorPacket{ .bits = .{ .speed = speed, .dir = dir, .channel = channel } };
 

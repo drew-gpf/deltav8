@@ -28,7 +28,7 @@ const c = @cImport({
 });
 
 // Uncomment or change to enable logs for any build mode
-pub const log_level: std.log.Level = .debug;
+//pub const log_level: std.log.Level = .debug;
 
 /// stdlib log handler; no logging is done if stdio is disabled.
 pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral), comptime format: []const u8, args: anytype) void {
@@ -38,7 +38,33 @@ pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral),
     logger.log(prefix ++ format ++ "\n", args) catch {};
 }
 
+const decel = 1.108219628;
+const max_vel = 2.882992752;
+const stopping_dist = (max_vel * max_vel)/(2.0 * decel) + 1.0;
+const stopping_dist_cm = @floatToInt(comptime_int, @round(stopping_dist * 100.0));
+
+comptime {
+    if (stopping_dist_cm > 1200) {
+        @compileLog("Stopping dist too large", stopping_dist_cm);
+    }
+
+    if (stopping_dist_cm <= 0) {
+        @compileLog("Stopping dist too small", stopping_dist_cm);
+    }
+}
+
 export fn main() void {
+    const watchdog_caused_reboot = c.watchdog_caused_reboot();
+
+    if (watchdog_caused_reboot) {
+        // Flash the LED on if the last reboot was caused by the watchdog. Note that
+        // this will also flash the LED after the flash memory has been written,
+        // because the bootrom will use the watchdog to reboot.
+        c.gpio_init(c.PICO_DEFAULT_LED_PIN);
+        c.gpio_set_dir(c.PICO_DEFAULT_LED_PIN, true);
+        c.gpio_put(c.PICO_DEFAULT_LED_PIN, true);
+    }
+
     // Configure a generous watchdog timer of 1 second in case something goes wrong.
     // This should be more than enough time for the sensor to init everything;
     // during testing it seems the sensor needs ~450ms to initialize (minus the 50ms delay for a valid data packet).
@@ -66,36 +92,111 @@ export fn main() void {
     // Tell the ADC that we're ready to receive samples
     adc.enableIrqs();
 
+    // Turn the watchdog LED back off. If the pico gets caught in an infinite reset loop,
+    // the LED will flash every 50ms or so.
+    if (watchdog_caused_reboot)
+        c.gpio_put(c.PICO_DEFAULT_LED_PIN, false);
+
     // Set a new, lower watchdog of 50ms which is enough time to transmit 5 data packets.
     // Because we reset independent of the sensor there won't be much time between resets if something randomly goes wrong.
     c.watchdog_enable(if (logger.stdio_enabled) 500 else 50, true);
+
+    // Whether or not each component had responded.
+    var adc_response = false;
+    var luna_response = false;
+
+    // Whether or not we should be braking, and whether or not we were braking.
+    var should_brake = false;
+    var was_braking = false;
+
+    // The next throttle voltage, or 0 if we are braking; and the last-known throttle voltage.
+    var current_voltage: u12 = 0;
+    var last_voltage = current_voltage;
 
     // Main event loop. We have two peripherals, the sensor and the throttle, continuously trying to give us some data;
     // the sensor through the UART RX IRQ and the throttle through the ADC's FIFO IRQ.
     // The sensor runs every ~10ms and the throttle (ADC) runs every ~1ms. To optimize power
     // we tell the M0+ to sleep until either one of these events occur; we then do something if either
     // are reporting new information. Following we then just go back to sleep.
-    // n.b.: we'll also get something to report velocity later
     while (true) {
         // Prevent race conditions by masking IRQs; assumes that IRQs are unmasked at this point
         intrin.cpsidi();
 
         if (uart.getNextLuna()) |luna| {
-            _ = luna;
+            // If we already had an ADC response we can update the watchdog here.
+            if (adc_response) {
+                c.watchdog_update();
+
+                luna_response = false;
+                adc_response = false;
+            } else {
+                luna_response = true;
+            }
+
+            was_braking = should_brake;
+
+            if (luna.getValidDist()) |dist| {
+                should_brake = dist <= stopping_dist_cm;
+            } else {
+                // Assume that invalid distances represent far-away values or are too close for braking to matter
+                should_brake = false;
+            }
         }
 
-        const throttle_voltage_opt = adc.getThrottleVoltage();
+        if (adc.getThrottleVoltage()) |voltage| {
+            // If we already had a Luna response we can update the watchdog here.
+            if (luna_response) {
+                c.watchdog_update();
 
-        // Wait for next IRQ with IRQs masked to prevent the RX IRQ from getting ignored
-        intrin.wfi();
-        intrin.cpsiei();
+                luna_response = false;
+                adc_response = false;
+            } else {
+                adc_response = true;
+            }
 
-        if (throttle_voltage_opt) |voltage| {
-            std.log.debug("Throttle val: {}", .{voltage});
-            uart.controlSpeed(voltage, .clockwise, .left);
+            // If we're braking we should always set voltage to 0, and change the motor speed
+            // generically from this. Then, if motor speed turns out to be different
+            // we always change it.
+            last_voltage = current_voltage;
+            current_voltage = if (should_brake) 0 else voltage;
         }
 
-        // todo: update watchdog to indicate that all components have responded
-        c.watchdog_update();
+        const should_set_brake = should_brake != was_braking;
+
+        if (current_voltage != last_voltage) {
+            // If we're releasing the brakes, we should do so before setting speed.
+            if (should_set_brake and !should_brake) {
+                std.debug.assert(current_voltage > 0);
+                setBrake(false);
+            }
+
+            // controlSpeed should be called with IRQs unmasked as it performs integer division and may wait for
+            // the UART hardware. If new throttle voltage is available we need to enable IRQs and set it here,
+            // and then see what arrived in the meantime without executing WFI.
+            intrin.cpsiei();
+            uart.controlSpeed(current_voltage, .clockwise, .left);
+
+            // If we're engaging the brakes, we should do so after setting speed.
+            if (should_set_brake and should_brake) {
+                std.debug.assert(current_voltage == 0);
+                setBrake(true);
+            }
+        } else {
+            // If not changing the motor speed, we can unconditionally set the brakes however.
+            // In this case the motor speed will always be 0.
+            if (should_set_brake) {
+                std.debug.assert(current_voltage == 0);
+                setBrake(should_brake);
+            }
+
+            // Wait for IRQs with IRQs masked to prevent any from getting lost.
+            intrin.wfi();
+            intrin.cpsiei();
+        }
     }
+}
+
+/// ...
+fn setBrake(brake: bool) void {
+    _ = brake;
 }

@@ -34,7 +34,13 @@ const throttle_pin = 26;
 const throttle_adc_input = throttle_pin - adc_pin_base;
 
 comptime {
-    if (throttle_adc_input < 0 or throttle_adc_input > 3) @compileLog("Invalid throttle ADC input selected from throttle pin (must be GPIO26..29)", throttle_adc_input, throttle_pin);
+    if (throttle_adc_input < 0 or throttle_adc_input > 3) {
+        @compileLog(
+            "Invalid throttle ADC input selected from throttle pin (must be GPIO26..29)",
+            throttle_adc_input,
+            throttle_pin,
+        );
+    }
 }
 
 /// Approximate min voltage the throttle reports when not cranked.
@@ -50,7 +56,7 @@ const adc_period = 1.0 / 48e+6;
 const throttle_period = 1 / 1.0e+3;
 
 /// No. of ADC cycles within a throttle period, subtracted with the n + 1 offset of the ADC hardware.
-const throttle_cycles = throttle_period / adc_period - 1.0;
+const throttle_cycles = (throttle_period / adc_period) - 1.0;
 
 /// The current (relative) voltage reading of the throttle, from throttle_vmin -> throttle_vmax.
 var current_throttle_voltage: ?u12 = null;
