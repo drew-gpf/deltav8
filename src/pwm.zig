@@ -92,8 +92,7 @@ pub fn init() !void {
     c.pwm_set_clkdiv(servo_pwm_slice, divider);
     c.pwm_set_wrap(servo_pwm_slice, servo_pwm_wrap);
     c.pwm_set_chan_level(servo_pwm_slice, servo_pwm_chan, servo_rotate_level);
-    c.irq_set_exclusive_handler(pwm_irq_wrap, servoWrapIrq);
-    c.irq_set_enabled(pwm_irq_wrap, true);
+    pwmSetEnabled(servo_pwm_slice, true);
 }
 
 /// Toggle the brake. Note that the brake takes 5.5 seconds to fully actuate and in this time
