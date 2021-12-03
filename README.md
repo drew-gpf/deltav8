@@ -37,7 +37,7 @@ On VSCode, it will help to install the default CMake extensions provided by the 
 To flash the output file (build/deltav8.uf2) see the [official instructions](https://www.raspberrypi.com/documentation/microcontrollers/c_sdk.html).
 
 # Electrical
-First, configure the SmartDriveDuo-30 MDDS30 such that it is in Serial Simplified input mode with 115200 bps (DIP SW1->SW6; 110111). Connect the IN1 pin to GPIO4, and on the same header block the GND pin to any of the Pico's grounds. Connect your motor to the MLA/MLB ports; corresponding to the "left" motor, although only the "left" motor is ever controlled.
+First, configure the SmartDriveDuo-30 MDDS30 such that it is in Serial Simplified input mode with 115200 bps (DIP SW1->SW6; 110111). Connect the IN1 pin to GPIO4, and on the same header block the GND pin to any of the Pico's grounds. Connect your motor to the MLA/MLB ports; corresponding to the "left" motor, although only the "left" motor is ever controlled. A 50 watt motor powered at 12 volts was used.
 
 The TF Luna's RX pin must be connected to GPIO0 and the TX pin must be connected to GPIO1. The remaining pins can be ignored; make sure they're never connected to anything. The Pico and the sensor should share the same ground reference. This can be done by powering them from the same source, which is ideal anyways as they have similar input voltages and don't consume much power.
 
@@ -47,7 +47,7 @@ Alternatively, the motor controller could be removed and the throttle could be c
 
 Also of note; the stopping distance chosen was simply a conservative value for the scooter's max speed of ~10.4 km/h and weak braking power. It could also be changed as a function of time if velocity were known.
 
-(Currently missing: servo/PWM)
+The LS-955CR continuous servomotor's PWM input must be connected to GPIO22. In the scooter it pulls on the manual brake via a wire. Like with the throttle and sensor, the servo and Pico must have the same ground.
 
 Limitations with the sensor unfortunately dictate that the assembly will wait ~500ms when initially plugged in to respond to input of any kind.
 

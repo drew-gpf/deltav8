@@ -51,7 +51,7 @@ add_compile_definitions(PICO_DOUBLE_SUPPORT_ROM_V1=0)
 pico_sdk_init()
 
 # Link with pico libs
-target_link_libraries(deltav8 pico_stdlib hardware_adc)
+target_link_libraries(deltav8 pico_stdlib hardware_adc hardware_pwm)
 
 # Debug feature; enable stdio over usb. Note that UART0 and UART1 are reserved for hardware devices
 # and thus enabling stdio via UART will trigger a compile error.

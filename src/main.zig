@@ -21,6 +21,7 @@ const uart = @import("uart.zig");
 const intrin = @import("intrin.zig");
 const clock = @import("clock.zig");
 const adc = @import("adc.zig");
+const pwm = @import("pwm.zig");
 
 const c = @cImport({
     @cInclude("pico/stdlib.h");
@@ -53,7 +54,7 @@ comptime {
     }
 }
 
-export fn main() void {
+fn mainWrap() !void {
     const watchdog_caused_reboot = c.watchdog_caused_reboot();
 
     if (watchdog_caused_reboot) {
@@ -72,15 +73,14 @@ export fn main() void {
     // to connect the USB cable.
     c.watchdog_enable(if (logger.stdio_enabled) 10000 else 1000, true);
 
-    // Configure system clocks to save power.
+    // Disable some clocks to save power
     clock.configureClocks();
     logger.initLogger();
 
     // Init the ADC peripherals first. The UART is initialized last as it could take up to 500ms.
     adc.init();
-
-    // Init the sensor and the accompanying UART
-    uart.init();
+    try pwm.init();
+    try uart.init();
 
     // Magic sleep value of 50ms because the sensor's data is unreliable before this period,
     // where dist seems to be some value smaller than it actually should be.
@@ -115,7 +115,7 @@ export fn main() void {
 
     // Main event loop. We have two peripherals, the sensor and the throttle, continuously trying to give us some data;
     // the sensor through the UART RX IRQ and the throttle through the ADC's FIFO IRQ.
-    // The sensor runs every ~10ms and the throttle (ADC) runs every ~1ms. To optimize power
+    // The sensor runs every ~10ms and the throttle (ADC) runs every ~5ms. To optimize power
     // we tell the M0+ to sleep until either one of these events occur; we then do something if either
     // are reporting new information. Following we then just go back to sleep.
     while (true) {
@@ -171,7 +171,7 @@ export fn main() void {
             // If we're releasing the brakes, we should do so before setting speed.
             if (should_set_brake and !should_brake) {
                 std.debug.assert(current_voltage > 0);
-                setBrake(false);
+                pwm.setBrake(false);
             }
 
             // controlSpeed should be called with IRQs unmasked as it performs integer division and may wait for
@@ -183,14 +183,14 @@ export fn main() void {
             // If we're engaging the brakes, we should do so after setting speed.
             if (should_set_brake and should_brake) {
                 std.debug.assert(current_voltage == 0);
-                setBrake(true);
+                pwm.setBrake(true);
             }
         } else {
             // If not changing the motor speed, we can unconditionally set the brakes however.
             // In this case the motor speed will always be 0.
             if (should_set_brake) {
                 std.debug.assert(current_voltage == 0);
-                setBrake(should_brake);
+                pwm.setBrake(should_brake);
             }
 
             // Wait for IRQs with IRQs masked to prevent any from getting lost.
@@ -200,7 +200,19 @@ export fn main() void {
     }
 }
 
-/// ...
-fn setBrake(brake: bool) void {
-    _ = brake;
+export fn main() void {
+    mainWrap() catch |e| {
+        // Flash the LED
+        c.gpio_init(c.PICO_DEFAULT_LED_PIN);
+        c.gpio_set_dir(c.PICO_DEFAULT_LED_PIN, true);
+        c.gpio_put(c.PICO_DEFAULT_LED_PIN, true);
+
+        // Send message infinitely and wait to get killed by the watchdog
+        while (true) {
+            std.log.warn("Error: {}", .{e});
+            c.sleep_ms(50);
+
+            intrin.loopHint();
+        }
+    };
 }

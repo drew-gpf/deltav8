@@ -31,6 +31,11 @@ const luna_uart_irq = c.UART0_IRQ;
 
 const motor_uart = uart.uart1;
 
+const uart0_tx_gpio = 0;
+const uart0_rx_gpio = 1;
+
+const uart1_tx_gpio = 4;
+
 pub const TfLunaPacket = extern union {
     fields: packed struct {
         /// Distance, in centimeters, to nearest target.
@@ -86,9 +91,9 @@ var luna_data_valid = false;
 /// UART0: TF Luna, 115200 baud rate, 8 data bits, 1 stop bit, no parity check, GPIO0 is TX, GPIO1 is RX
 /// UART1: Motor controller, 115200 baud rate, 8 data bits, 1 stop bit, no parity check, GPIO4 is TX (no RX)
 /// Additionally this will install an IRQ handler for UART0 on the current core.
-pub fn init() void {
-    initLunaUart();
-    initMotorUart();
+pub fn init() !void {
+    try initLunaUart();
+    try initMotorUart();
 }
 
 /// Get most recent data packet from the TF Luna, or null if none available.
@@ -124,20 +129,12 @@ pub inline fn controlSpeed(throttle_voltage: u12, dir: MotorDir, channel: MotorC
     motor_uart.writeByte(packet.full);
 }
 
-fn initLunaUart() void {
-    // Use GPIO 0, 1 for UART0
-    c.gpio_set_function(0, c.GPIO_FUNC_UART);
-    c.gpio_set_function(1, c.GPIO_FUNC_UART);
+fn initLunaUart() !void {
+    c.gpio_set_function(uart0_tx_gpio, c.GPIO_FUNC_UART);
+    c.gpio_set_function(uart0_rx_gpio, c.GPIO_FUNC_UART);
 
-    // Reset the UART
-    luna_uart.init() catch |e| {
-        fatalError("Failed to init UART0: {}", .{e});
-    };
-
-    // Enable it, setting the required format for the TF Luna
-    luna_uart.enable(115200, .none, .one, .eight, true) catch |e| {
-        fatalError("Failed to enable UART0: {}", .{e});
-    };
+    try luna_uart.init();
+    try luna_uart.enable(115200, .none, .one, .eight, true);
 
     // Before enabling RX we set the RX communication IRQ which is used to avoid timing issues
     c.irq_set_exclusive_handler(luna_uart_irq, lunaUartCommIrq);
@@ -149,14 +146,13 @@ fn initLunaUart() void {
 
     // Set the sensor to a known state. We configure it to use an 8 byte header which allows each packet to
     // trigger an RX IRQ without waiting.
-    enableChecksum() catch |e| fatalError("Failed to enable checksum mode: {}", .{e});
+    try enableChecksum();
     std.log.debug("Enabled checksum verification", .{});
 
-    setOutputFmt(.eight_byte_cm) catch |e| fatalError("Failed to set output mode: {}", .{e});
+    try setOutputFmt(.eight_byte_cm);
     std.log.debug("Set output mode", .{});
 
-    // Default 100Hz
-    setOutputFreq(100) catch |e| fatalError("Failed to set output frequency: {}", .{e});
+    try setOutputFreq(100);
     std.log.debug("Set output frequency", .{});
 
     // Disable RX and TX temporarily
@@ -178,22 +174,15 @@ fn initLunaUart() void {
     std.log.debug("UART0 ready to use", .{});
 }
 
-fn initMotorUart() void {
-    // Use GPIO 4 (TX only) for UART1
-    c.gpio_set_function(4, c.GPIO_FUNC_UART);
+fn initMotorUart() !void {
+    c.gpio_set_function(uart1_tx_gpio, c.GPIO_FUNC_UART);
 
-    motor_uart.init() catch |e| {
-        fatalError("Failed to init UART1: {}", .{e});
-    };
-
-    motor_uart.enable(115200, .none, .one, .eight, false) catch |e| {
-        fatalError("Failed to enable UART1: {}", .{e});
-    };
-
+    try motor_uart.init();
+    try motor_uart.enable(115200, .none, .one, .eight, false);
     motor_uart.enableTx();
-    controlSpeed(0, .clockwise, .left);
-    
+
     std.log.debug("UART1 ready to use", .{});
+    controlSpeed(0, .clockwise, .left);
 }
 
 /// Reset the sensor.
@@ -460,19 +449,4 @@ fn lunaUartIrq() callconv(.C) void {
     }
 
     while (!luna_uart.isRxFifoEmpty()) _ = luna_uart.readByte();
-}
-
-inline fn fatalError(comptime reason: []const u8, args: anytype) noreturn {
-    // Flash the LED
-    c.gpio_init(c.PICO_DEFAULT_LED_PIN);
-    c.gpio_set_dir(c.PICO_DEFAULT_LED_PIN, true);
-    c.gpio_put(c.PICO_DEFAULT_LED_PIN, true);
-
-    // Send message infinitely and wait to get killed by the watchdog
-    while (true) {
-        std.log.warn(reason, args);
-        c.sleep_ms(50);
-
-        intrin.loopHint();
-    }
 }

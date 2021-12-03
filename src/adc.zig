@@ -52,8 +52,8 @@ const throttle_vmax = 2930;
 /// No. of seconds per ADC cycle (48MHz)
 const adc_period = 1.0 / 48e+6;
 
-/// No. of seconds per ADC conversion (1ms)
-const throttle_period = 1 / 1.0e+3;
+/// No. of seconds per ADC conversion (5ms)
+const throttle_period = 5.0 / 1.0e+3;
 
 /// No. of ADC cycles within a throttle period, subtracted with the n + 1 offset of the ADC hardware.
 const throttle_cycles = (throttle_period / adc_period) - 1.0;
@@ -68,7 +68,7 @@ const throttle_fifo_irq = 22;
 pub const max_throttle_voltage = throttle_vmax - throttle_vmin;
 
 /// Initialize the ADC hardware and designate GPIO 26 as the pin to receive throttle output.
-/// It will furthermore configure the ADC such that it fires an IRQ approx. every 1ms with new data from the ADC,
+/// It will furthermore configure the ADC such that it fires an IRQ approx. every 5ms with new data from the ADC,
 /// which will be converted and sent to getThrottleSpeed.
 /// The throttle should be powered by the 3v3 out pin and any ground pin. todo: figure out better voltage ranges.
 pub fn init() void {
@@ -83,7 +83,7 @@ pub fn init() void {
     c.irq_set_enabled(throttle_fifo_irq, true);
     adcIrqSetEnabled(true);
 
-    // Configure the clock divisor such that a conversion is only performed after ~1ms.
+    // Configure the clock divisor such that a conversion is only performed after ~5ms.
     // Here we can tell the ADC to run every n + 1 ADC cycles, based on a 48MHz clock;
     // because a conversion takes 96 cycles, a value less than or equal to 96 will be equivalent to 0
     // which represents no delay.
