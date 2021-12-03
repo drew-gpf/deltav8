@@ -19,7 +19,10 @@ const c = @cImport({
     @cInclude("pico/stdlib.h");
     @cInclude("hardware/pwm.h");
     @cInclude("hardware/clocks.h");
+    @cInclude("hardware/irq.h");
 });
+
+const pwm_irq_wrap = 4;
 
 const servo_pwm_gpio = 22;
 const servo_pwm_slice = c.pwm_gpio_to_slice_num(servo_pwm_gpio);
@@ -42,6 +45,18 @@ const servo_stop_level = @floatToInt(u16, @round(servo_half_ms_level * 3.0));
 
 /// The rounded number of cycles to rotate the servo counterclockwise at full speed (0.5ms * 5 = 2.5ms).
 const servo_counterclockwise_level = @floatToInt(u16, @round(servo_half_ms_level * 5.0));
+
+/// The level to select to brake/rotate the servo.
+const servo_rotate_level = servo_counterclockwise_level;
+
+/// Amount of time, in seconds, the servo takes to fully rotate.
+const servo_rotate_time = 5.5;
+
+/// Number of 20ms (servo period/PWM wrap) cycles for the servo to fully rotate.
+const servo_rotate_cycles = @floatToInt(comptime_int, @ceil(servo_rotate_time / servo_period));
+
+/// The current number of times the servo IRQ has wrapped while braking. Reset when no longer braking.
+var servo_wrap_cycles: usize = 0;
 
 /// Initialize the PWM hardware for the continuous servomotor on GPIO22.
 pub fn init() !void {
@@ -68,16 +83,52 @@ pub fn init() !void {
     if (divider < 1.0 or divider >= 256.0)
         return error.InvalidPwmDivider;
 
-    // Init the servo PWM and output a 1.5ms pulse every 20ms; telling the servo to stop rotating.
+    // Init the servo PWM but do not output a pulse.
+    // Because the handbrake will resist the servo, we can make this easy for ourselves:
+    // when not braking, no PWM signal is sent and the servo will naturally reset to a neutral position.
+    // Otherwise, we set a rotation pulse for the amount of time needed to brake;
+    // to do this efficiently we can just enable IRQs for when the PWM wraps.
+    // Then, we disable the IRQ and set the level to the stop position.
     c.pwm_set_clkdiv(servo_pwm_slice, divider);
     c.pwm_set_wrap(servo_pwm_slice, servo_pwm_wrap);
-    c.pwm_set_chan_level(servo_pwm_slice, servo_pwm_chan, servo_stop_level);
-    pwmSetEnabled(servo_pwm_slice, true);
+    c.pwm_set_chan_level(servo_pwm_slice, servo_pwm_chan, servo_rotate_level);
+    c.irq_set_exclusive_handler(pwm_irq_wrap, servoWrapIrq);
+    c.irq_set_enabled(pwm_irq_wrap, true);
 }
 
-// Toggle the brake. Note that it may take some time for the brake to fully actuate.
+/// Toggle the brake. Note that the brake takes 5.5 seconds to fully actuate and in this time
+/// a wrap IRQ will be fired every 20ms.
 pub fn setBrake(brake: bool) void {
-    _ = brake;
+    if (brake) {
+        // We're braking, so we should set the servo to rotate and enable the wrap IRQ.
+        c.pwm_set_counter(servo_pwm_slice, 0);
+        c.pwm_set_irq_enabled(servo_pwm_slice, true);
+        pwmSetEnabled(servo_pwm_slice, true);
+    } else {
+        // We don't need to brake, so tell the servo to release.
+        // Note that if the PWM output is currently high it will remain high, so we need
+        // to manually override the GPIO pin (as explained in the pico SDK).
+        // We also need to set the level back to rotate as it may be set to the stop level.
+        pwmSetEnabled(servo_pwm_slice, false);
+        c.gpio_put(servo_pwm_gpio, false);
+        c.pwm_set_irq_enabled(servo_pwm_slice, false);
+        c.pwm_set_chan_level(servo_pwm_slice, servo_pwm_chan, servo_rotate_level);
+        servo_wrap_cycles = 0;
+    }
+}
+
+/// Called when the servo PWM block wraps, approx. every 20ms. Only used when braking.
+fn servoWrapIrq() callconv(.C) void {
+    // Always increment the cycle counter before doing the comparison;
+    // this IRQ will be fired 20ms after initially telling the servo to rotate.
+    servo_wrap_cycles += 1;
+
+    if (servo_wrap_cycles >= servo_rotate_cycles) {
+        // The servo's fully rotated, so we need to tell it to stop.
+        // We can also disable this IRQ.
+        c.pwm_set_chan_level(servo_pwm_slice, servo_pwm_chan, servo_stop_level);
+        c.pwm_set_irq_enabled(servo_pwm_slice, false);
+    }
 }
 
 // More Pico SDK UB breaking translate-c

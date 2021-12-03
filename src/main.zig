@@ -118,6 +118,8 @@ fn mainWrap() !void {
     // The sensor runs every ~10ms and the throttle (ADC) runs every ~5ms. To optimize power
     // we tell the M0+ to sleep until either one of these events occur; we then do something if either
     // are reporting new information. Following we then just go back to sleep.
+    // We also get servo PWM IRQs every 20ms during the braking process, but
+    // all the data is processed inside the IRQ.
     while (true) {
         // Prevent race conditions by masking IRQs; assumes that IRQs are unmasked at this point
         intrin.cpsidi();
