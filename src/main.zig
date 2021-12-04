@@ -101,24 +101,20 @@ fn mainWrap() !void {
     // Because we reset independent of the sensor there won't be much time between resets if something randomly goes wrong.
     c.watchdog_enable(if (logger.stdio_enabled) 500 else 50, true);
 
-    // Whether or not each component had responded.
     var adc_response = false;
     var luna_response = false;
 
-    // Whether or not we should be braking, and whether or not we were braking.
-    var should_brake = false;
-    var was_braking = false;
-
-    // The next throttle voltage, or 0 if we are braking; and the last-known throttle voltage.
-    var current_voltage: u12 = 0;
-    var last_voltage = current_voltage;
+    // We may need to overwrite the throttle voltage with 0 if the brake mechanism is actuating,
+    // so keep track of the last known reported voltage.
+    var last_reported_throttle: u12 = 0;
+    var last_set_throttle: u12 = 0;
 
     // Main event loop. We have two peripherals, the sensor and the throttle, continuously trying to give us some data;
     // the sensor through the UART RX IRQ and the throttle through the ADC's FIFO IRQ.
     // The sensor runs every ~10ms and the throttle (ADC) runs every ~5ms. To optimize power
     // we tell the M0+ to sleep until either one of these events occur; we then do something if either
     // are reporting new information. Following we then just go back to sleep.
-    // We also get servo PWM IRQs every 20ms during the braking process, but
+    // We also get servo PWM IRQs every 3.3ms during the braking/unbraking process, but
     // all the data is processed inside the IRQ.
     while (true) {
         // Prevent race conditions by masking IRQs; assumes that IRQs are unmasked at this point
@@ -135,12 +131,9 @@ fn mainWrap() !void {
                 luna_response = true;
             }
 
-            if (luna.getValidDist()) |dist| {
-                should_brake = dist <= stopping_dist_cm;
-            } else {
-                // Assume that invalid distances represent far-away values or are too close for braking to matter
-                should_brake = false;
-            }
+            // Assume that invalid distances represent far-away values or are too close for braking to matter
+            const should_brake = if (luna.getValidDist()) |dist| dist <= stopping_dist_cm else false;
+            pwm.setBrake(should_brake);
         }
 
         if (adc.getThrottleVoltage()) |voltage| {
@@ -154,47 +147,24 @@ fn mainWrap() !void {
                 adc_response = true;
             }
 
-            current_voltage = voltage;
+            last_reported_throttle = voltage;
         }
 
-        // Always reset the current voltage to 0 if we should be braking. This covers the case where
-        // voltage is nonzero but we need to brake and don't have a new throttle voltage,
-        // because we will then set the speed to 0.
-        if (should_brake)
-            current_voltage = 0;
+        // Always reset the current voltage to 0 if the brake is actuating, even if
+        // we haven't yet retrieved a new throttle val.
+        const throttle_to_set = if (pwm.isBrakeActuating()) 0 else last_reported_throttle;
 
-        const should_set_brake = should_brake != was_braking;
-        was_braking = should_brake;
-
-        const should_change_voltage = current_voltage != last_voltage;
-        last_voltage = current_voltage;
-
-        if (should_change_voltage) {
-            // If we're releasing the brakes, we should do so before setting speed.
-            if (should_set_brake and !should_brake) {
-                std.debug.assert(current_voltage > 0);
-                pwm.setBrake(false);
-            }
+        if (throttle_to_set != last_set_throttle) {
+            last_set_throttle = throttle_to_set;
 
             // controlSpeed should be called with IRQs unmasked as it performs integer division and may wait for
             // the UART hardware. If new throttle voltage is available we need to enable IRQs and set it here,
             // and then see what arrived in the meantime without executing WFI.
+            // Note that if the brake is set to actuate it won't actually do so until we enable IRQs,
+            // at which point we assert it impossible for there to be a noticeable delay.
             intrin.cpsiei();
-            uart.controlSpeed(current_voltage, .clockwise, .left);
-
-            // If we're engaging the brakes, we should do so after setting speed.
-            if (should_set_brake and should_brake) {
-                std.debug.assert(current_voltage == 0);
-                pwm.setBrake(true);
-            }
+            uart.controlSpeed(throttle_to_set, .clockwise, .left);
         } else {
-            // If not changing the motor speed, we can unconditionally set the brakes however.
-            // In this case the motor speed will always be 0.
-            if (should_set_brake) {
-                std.debug.assert(current_voltage == 0);
-                pwm.setBrake(should_brake);
-            }
-
             // Wait for IRQs with IRQs masked to prevent any from getting lost.
             intrin.wfi();
             intrin.cpsiei();
