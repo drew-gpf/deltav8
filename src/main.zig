@@ -50,6 +50,7 @@ fn mainWrap() !void {
     while (true) {
         std.log.debug("raw voltage: {}", .{c.adc_read()});
         intrin.loopHint();
+        c.sleep_ms(50);
     }
 }
 
