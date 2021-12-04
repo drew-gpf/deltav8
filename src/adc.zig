@@ -44,10 +44,10 @@ comptime {
 }
 
 /// Approximate min voltage the throttle reports when not cranked.
-const throttle_vmin = 1250;
+const throttle_vmin = 1050;
 
 /// Approximate max voltage the throttle reports when fully cranked.
-const throttle_vmax = 2930;
+const throttle_vmax = 3050;
 
 /// No. of seconds per ADC cycle (48MHz)
 const adc_period = 1.0 / 48e+6;
