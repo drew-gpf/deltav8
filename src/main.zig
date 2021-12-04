@@ -44,10 +44,7 @@ fn mainWrap() !void {
     logger.initLogger();
 
     try pwm.init();
-    while (true) {
-        std.log.debug("alive", .{});
-        c.sleep_ms(500);
-    }
+    while (true) {}
 }
 
 export fn main() void {
