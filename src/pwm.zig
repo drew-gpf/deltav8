@@ -28,14 +28,15 @@ const servo_pwm_gpio = 22;
 const servo_pwm_slice = c.pwm_gpio_to_slice_num(servo_pwm_gpio);
 const servo_pwm_chan = c.pwm_gpio_to_channel(servo_pwm_gpio);
 
-const servo_period = 20.0 / 1.0e+3;
+const servo_freq = 300.0;
+const servo_period = 1.0 / servo_freq;
 const servo_pwm_wrap = 65535;
 const servo_wrap = @intToFloat(comptime_float, servo_pwm_wrap + 1);
 
 /// The exact number of PWM cycles per half-millisecond.
 /// This is because the PWM runs pwm_clock/divider = pwm_clock/((servo_period * pwm_clock)/wrap)
 /// = (pwm_clock * wrap)/(servo_period * pwm_clock) = wrap/servo_period times per second.
-const servo_half_ms_level = (servo_wrap / servo_period) * (0.5 / 1.0e+3);
+const servo_half_ms_level = (servo_wrap * servo_freq) * (0.5 / 1.0e+3);
 
 /// The rounded number of cycles to rotate the servo clockwise at full speed.
 const servo_clockwise_level = @floatToInt(u16, @round(servo_half_ms_level));
@@ -52,8 +53,8 @@ const servo_rotate_level = servo_counterclockwise_level;
 /// Amount of time, in seconds, the servo takes to fully rotate.
 const servo_rotate_time = 5.5;
 
-/// Number of 20ms (servo period/PWM wrap) cycles for the servo to fully rotate.
-const servo_rotate_cycles = @floatToInt(comptime_int, @ceil(servo_rotate_time / servo_period));
+/// Number of servo periods for the servo to fully rotate in one direction.
+const servo_rotate_cycles = @floatToInt(comptime_int, @ceil(servo_rotate_time * servo_freq));
 
 /// The current number of times the servo IRQ has wrapped while braking. Reset when no longer braking.
 var servo_wrap_cycles: usize = 0;
@@ -63,7 +64,7 @@ pub fn init() !void {
     c.gpio_set_function(servo_pwm_gpio, c.GPIO_FUNC_PWM);
 
     // We need to configure the PWM freerunning counter such that it has
-    // a 20ms period and can be high for 0.5ms, 1.5ms, or 2.5ms;
+    // a 300hz frequency and can be high for 0.5ms, 1.5ms, or 2.5ms;
     // .5ms -> full speed clockwise
     // 1.5ms -> stop
     // 2.5ms -> full speed counter-clockwise
@@ -76,7 +77,7 @@ pub fn init() !void {
     // Here our wrap should be 0xFFFF + 1 (65536) to provide the best granularity;
     // 65536divider = servo_period * pwm_clock
     // divider = (servo_period * pwm_clock) / 65536.
-    // This results in a divider ~38.147 for a 125Mhz PWM clock (default).
+    // This results in a divider ~6.357 for a 125Mhz PWM clock and 300hz period (default).
     const pwm_clock = c.clock_get_hz(c.clk_sys);
     const divider = (servo_period * @intToFloat(f32, pwm_clock)) / servo_wrap;
 
@@ -96,7 +97,7 @@ pub fn init() !void {
 }
 
 /// Toggle the brake. Note that the brake takes 5.5 seconds to fully actuate and in this time
-/// a wrap IRQ will be fired every 20ms.
+/// a wrap IRQ will be fired every ~3.3ms.
 pub fn setBrake(brake: bool) void {
     if (brake) {
         // We're braking, so we should set the servo to rotate and enable the wrap IRQ.
@@ -116,10 +117,10 @@ pub fn setBrake(brake: bool) void {
     }
 }
 
-/// Called when the servo PWM block wraps, approx. every 20ms. Only used when braking.
+/// Called when the servo PWM block wraps, approx. every servo period. Only used when braking.
 fn servoWrapIrq() callconv(.C) void {
     // Always increment the cycle counter before doing the comparison;
-    // this IRQ will be fired 20ms after initially telling the servo to rotate.
+    // this IRQ will be fired every servo period after initially telling the servo to rotate.
     servo_wrap_cycles += 1;
 
     if (servo_wrap_cycles >= servo_rotate_cycles) {
