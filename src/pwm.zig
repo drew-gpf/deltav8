@@ -28,27 +28,30 @@ const servo_pwm_gpio = 22;
 const servo_pwm_slice = c.pwm_gpio_to_slice_num(servo_pwm_gpio);
 const servo_pwm_chan = c.pwm_gpio_to_channel(servo_pwm_gpio);
 
+/// According to the Hitech datasheet this digital (clone) servo should have a 300Hz frequency.
 const servo_freq = 300.0;
 const servo_period = 1.0 / servo_freq;
 const servo_pwm_wrap = 65535;
 const servo_wrap = @intToFloat(comptime_float, servo_pwm_wrap + 1);
 
 /// The exact number of PWM cycles per half-millisecond.
-/// This is because the PWM runs pwm_clock/divider = pwm_clock/((servo_period * pwm_clock)/wrap)
-/// = (pwm_clock * wrap)/(servo_period * pwm_clock) = wrap/servo_period times per second.
+/// This is because the PWM runs wrap*freq times per second.
 const servo_half_ms_level = (servo_wrap * servo_freq) * (0.5 / 1.0e+3);
 
-/// The rounded number of cycles to rotate the servo clockwise at full speed.
-const servo_clockwise_level = @floatToInt(u16, @round(servo_half_ms_level));
+/// The rounded number of cycles to rotate the servo clockwise at full speed (0.5ms * 2 = 1.0ms).
+const servo_clockwise_level = @floatToInt(u16, @round(servo_half_ms_level * 2.0));
 
 /// The rounded number of cycles to stop rotating the servo (0.5ms * 3 = 1.5ms).
 const servo_stop_level = @floatToInt(u16, @round(servo_half_ms_level * 3.0));
 
-/// The rounded number of cycles to rotate the servo counterclockwise at full speed (0.5ms * 5 = 2.5ms).
-const servo_counterclockwise_level = @floatToInt(u16, @round(servo_half_ms_level * 5.0));
+/// The rounded number of cycles to rotate the servo counterclockwise at full speed (0.5ms * 4 = 2.0ms).
+const servo_counterclockwise_level = @floatToInt(u16, @round(servo_half_ms_level * 4.0));
 
 /// The level to select to brake/rotate the servo.
-const servo_rotate_level = servo_counterclockwise_level;
+const servo_rotate_level = servo_clockwise_level;
+
+/// The level to select to unbrake the servo.
+const servo_unrotate_level = servo_counterclockwise_level;
 
 /// Amount of time, in seconds, the servo takes to fully rotate.
 const servo_rotate_time = 5.5;
@@ -58,6 +61,8 @@ const servo_rotate_cycles = @floatToInt(comptime_int, @ceil(servo_rotate_time * 
 
 /// The current number of times the servo IRQ has wrapped while braking. Reset when no longer braking.
 var servo_wrap_cycles: usize = 0;
+var servo_braking: bool = false;
+var servo_actuating: bool = false;
 
 /// Initialize the PWM hardware for the continuous servomotor on GPIO22.
 pub fn init() !void {
@@ -84,12 +89,11 @@ pub fn init() !void {
     if (divider < 1.0 or divider >= 256.0)
         return error.InvalidPwmDivider;
 
-    // Init the servo PWM but do not output a pulse.
-    // Because the handbrake will resist the servo, we can make this easy for ourselves:
-    // when not braking, no PWM signal is sent and the servo will naturally reset to a neutral position.
-    // Otherwise, we set a rotation pulse for the amount of time needed to brake;
-    // to do this efficiently we can just enable IRQs for when the PWM wraps.
-    // Then, we disable the IRQ and set the level to the stop position.
+    // Init the servo PWM and continually output a stop pulse (1.5ms).
+    // When we need to brake, we rotate the servo and enable the wrap IRQ and count each until about
+    // servo_rotate_time seconds had passed; we then set it back to the stop "position".
+    // When we need to unbrake we rotate in the opposite direction, instead counting down the counter
+    // which should have been incremented earlier.
     c.pwm_set_clkdiv(servo_pwm_slice, divider);
     c.pwm_set_wrap(servo_pwm_slice, servo_pwm_wrap);
     c.pwm_set_chan_level(servo_pwm_slice, servo_pwm_chan, servo_rotate_level);
@@ -98,36 +102,43 @@ pub fn init() !void {
 
 /// Toggle the brake. Note that the brake takes 5.5 seconds to fully actuate and in this time
 /// a wrap IRQ will be fired every ~3.3ms.
-pub fn setBrake(brake: bool) void {
-    if (brake) {
-        // We're braking, so we should set the servo to rotate and enable the wrap IRQ.
-        c.pwm_set_counter(servo_pwm_slice, 0);
-        c.pwm_set_irq_enabled(servo_pwm_slice, true);
-        pwmSetEnabled(servo_pwm_slice, true);
-    } else {
-        // We don't need to brake, so tell the servo to release.
-        // Note that if the PWM output is currently high it will remain high, so we need
-        // to manually override the GPIO pin (as explained in the pico SDK).
-        // We also need to set the level back to rotate as it may be set to the stop level.
-        pwmSetEnabled(servo_pwm_slice, false);
-        c.gpio_put(servo_pwm_gpio, false);
-        c.pwm_set_irq_enabled(servo_pwm_slice, false);
-        c.pwm_set_chan_level(servo_pwm_slice, servo_pwm_chan, servo_rotate_level);
-        servo_wrap_cycles = 0;
-    }
+/// This function must be called with IRQs disabled. If braking, the motor must be off;
+/// if unbraking, the caller needs to wait the full period (determined by isBraking) before
+/// turning back on the motor.
+pub inline fn setBrake(brake: bool) void {
+    if (servo_braking == brake) return;
+
+    // If we're braking, we should set the servo to rotate and enable the wrap IRQ.
+    // Otherwise we should rotate in the opposite direction until we've reached the amount of rotation
+    // we'd done previously.
+    // To simplify logic we can invert the number of wrap cycles and only reset it to 0 once unbraking is complete.
+    servo_braking = brake;
+    if (!brake) servo_wrap_cycles = servo_rotate_cycles - servo_wrap_cycles;
+
+    c.pwm_set_chan_level(servo_pwm_slice, servo_pwm_chan, if (brake) servo_rotate_level else servo_unrotate_level);
+    c.pwm_set_irq_enabled(servo_pwm_slice, true);
+    servo_actuating = true;
 }
 
-/// Called when the servo PWM block wraps, approx. every servo period. Only used when braking.
-fn servoWrapIrq() callconv(.C) void {
-    // Always increment the cycle counter before doing the comparison;
-    // this IRQ will be fired every servo period after initially telling the servo to rotate.
-    servo_wrap_cycles += 1;
+/// Returns whether or not the brake mechanism is still actuating;
+/// In other words, this function indicates whether or not any torque is applied onto the brake.
+/// So, if this function returns true, the motor speed must be 0.
+pub inline fn isBrakeActuating() bool {
+    return servo_actuating or servo_braking;
+}
 
+/// Called when the servo PWM block wraps every servo period. Used when actuating the brake.
+fn servoWrapIrq() callconv(.C) void {
     if (servo_wrap_cycles >= servo_rotate_cycles) {
-        // The servo's fully rotated, so we need to tell it to stop.
-        // We can also disable this IRQ.
+        // The servo's fully rotated, so we need to tell it to stop;
+        // we can also disable this IRQ.
         c.pwm_set_chan_level(servo_pwm_slice, servo_pwm_chan, servo_stop_level);
         c.pwm_set_irq_enabled(servo_pwm_slice, false);
+        servo_wrap_cycles = if (servo_braking) servo_rotate_cycles else 0;
+        servo_actuating = false;
+    } else {
+        // Always increment after the check as the change in level should only take effect after this IRQ.
+        servo_wrap_cycles += 1;
     }
 }
 
