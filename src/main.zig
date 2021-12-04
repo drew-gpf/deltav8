@@ -42,15 +42,18 @@ pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral),
 
 fn mainWrap() !void {
     logger.initLogger();
-    
-    c.adc_init();
-    c.adc_gpio_init(26);
-    c.adc_select_input(0);
+    adc.init();
+    adc.enableIrqs();
 
     while (true) {
-        std.log.debug("raw voltage: {}", .{c.adc_read()});
-        intrin.loopHint();
-        c.sleep_ms(50);
+        intrin.cpsidi();
+        const voltage = adc.getThrottleVoltage();
+        intrin.wfi();
+        intrin.cpsiei();
+
+        if (voltage) |throttle| {
+            std.log.debug("throttle voltage: {} motor speed: {}", .{ throttle, (std.math.shl(usize, throttle, std.meta.bitCount(u6))) / adc.max_throttle_voltage });
+        }
     }
 }
 
