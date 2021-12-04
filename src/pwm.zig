@@ -103,7 +103,7 @@ pub fn init() !void {
 /// Toggle the brake. Note that the brake takes 5.5 seconds to fully actuate and in this time
 /// a wrap IRQ will be fired every ~3.3ms.
 /// This function must be called with IRQs disabled. If braking, the motor must be off;
-/// if unbraking, the caller needs to wait the full period (determined by isBraking) before
+/// if unbraking, the caller needs to wait the full period (determined by isBrakeActuating) before
 /// turning back on the motor.
 pub inline fn setBrake(brake: bool) void {
     if (servo_braking == brake) return;
