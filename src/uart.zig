@@ -342,7 +342,10 @@ fn lunaUartCommIrq() callconv(.C) void {
         const model_header = [_]u8{ header_byte, @intCast(u8, potential_header.len), CommState.id };
 
         while (!luna_uart.isRxFifoEmpty()) {
-            const current_byte = luna_uart.readByte();
+            const current_byte = luna_uart.readByte() orelse {
+                CommState.current_idx = 0;
+                continue;
+            };
 
             if (CommState.current_idx < model_header.len) {
                 const expected_byte = model_header[CommState.current_idx];
@@ -440,9 +443,10 @@ fn lunaUartIrq() callconv(.C) void {
     // received.
     const status = luna_uart.getIrqStatus();
 
-    if (status.rtim == 0) {
+    if (status.rtim == 0) blk: {
         for (current_luna_data.bytes) |*byte| {
-            byte.* = luna_uart.readByte();
+            // If we were unable to receive data, drain the RX FIFO.
+            byte.* = luna_uart.readByte() orelse break :blk;
         }
 
         luna_data_valid = true;
