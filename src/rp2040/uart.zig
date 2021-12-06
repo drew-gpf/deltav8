@@ -37,6 +37,7 @@ const FifoLevel = uart_struct.FifoLevel;
 const WLen = uart_struct.WLen;
 const Imsc = uart_struct.Imsc;
 const Fr = uart_struct.Fr;
+const Dr = uart_struct.Dr;
 
 /// Uart in-memory representation with helper functions provided.
 /// Use uart0 or uart1 to interface with a uart device.
@@ -225,8 +226,18 @@ pub const Uart = extern struct {
     /// This will not read error bits.
     /// To perform a blocking read (usually outside of an IRQ) see getReader().
     /// Note however that the reader will work on byte-sized slices.
-    pub inline fn readByte(this: *Uart) u8 {
-        return this.regs.dr.readBits().data;
+    /// This function returns null if any error bit in the UART DR is set, except for the overflow bit.
+    pub inline fn readByte(this: *Uart) ?u8 {
+        const dr = this.readDr();
+        const err = dr.err;
+
+        return if (err.be == 0 and err.fe == 0 and err.pe == 0) dr.data else null;
+    }
+
+    /// Read the data register directly. This is equivalent to readByte, except
+    /// this function includes error bits.
+    pub inline fn readDr(this: *Uart) Dr {
+        return this.regs.dr.readBits();
     }
 
     /// Write a character to the TX FIFO or holding register.
@@ -252,7 +263,7 @@ pub const Uart = extern struct {
     pub const WriteError = error{};
     pub const Writer = std.io.Writer(*Uart, WriteError, writeFn);
 
-    pub const ReadError = error{};
+    pub const ReadError = error{InvalidByte};
     pub const Reader = std.io.Reader(*Uart, ReadError, readFn);
 
     fn writeFn(this: *Uart, bytes: []const u8) WriteError!usize {
@@ -267,7 +278,7 @@ pub const Uart = extern struct {
     fn readFn(this: *Uart, bytes: []u8) ReadError!usize {
         for (bytes) |*byte| {
             while (this.isRxFifoEmpty()) intrin.loopHint();
-            byte.* = this.readByte();
+            byte.* = this.readByte() orelse return error.InvalidByte;
         }
 
         return bytes.len;

@@ -24,11 +24,6 @@ project(deltav8)
 set(ZIG_OBJ_PATH "${CMAKE_CURRENT_LIST_DIR}/out/deltav8_zig.o")
 set(DUMMY_SRC_PATH "${CMAKE_CURRENT_LIST_DIR}/src/cmake_dummy.c")
 
-# Delete zig-cache on reconfiguring, mainly to flush the cImport cache if include dirs or definitions change.
-execute_process(COMMAND ${CMAKE_COMMAND} -E rm -rf zig-cache
-    WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
-)
-
 # Supress warnings about deltav8_zig.o not existing.
 # This is kind of a hack but it shouldn't(???) matter as the actual object file is generated
 # along with the cmake dummy object file, so it will be present when linking.
