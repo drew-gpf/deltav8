@@ -28,8 +28,7 @@ const servo_pwm_gpio = 22;
 const servo_pwm_slice = c.pwm_gpio_to_slice_num(servo_pwm_gpio);
 const servo_pwm_chan = c.pwm_gpio_to_channel(servo_pwm_gpio);
 
-/// According to the Hitech datasheet this digital (clone) servo should have a 300Hz frequency.
-const servo_freq = 300.0;
+const servo_freq = 50.0;
 const servo_period = 1.0 / servo_freq;
 const servo_pwm_wrap = 65535;
 const servo_wrap = @intToFloat(comptime_float, servo_pwm_wrap + 1);
@@ -38,14 +37,14 @@ const servo_wrap = @intToFloat(comptime_float, servo_pwm_wrap + 1);
 /// This is because the PWM runs wrap*freq times per second.
 const servo_half_ms_level = (servo_wrap * servo_freq) * (0.5 / 1.0e+3);
 
-/// The rounded number of cycles to rotate the servo clockwise at full speed (0.5ms * 2 = 1.0ms).
-const servo_clockwise_level = @floatToInt(u16, @round(servo_half_ms_level * 2.0));
+/// The rounded number of cycles to rotate the servo clockwise at full speed (0.5ms).
+const servo_clockwise_level = @floatToInt(u16, @round(servo_half_ms_level));
 
 /// The rounded number of cycles to stop rotating the servo (0.5ms * 3 = 1.5ms).
 const servo_stop_level = @floatToInt(u16, @round(servo_half_ms_level * 3.0));
 
-/// The rounded number of cycles to rotate the servo counterclockwise at full speed (0.5ms * 4 = 2.0ms).
-const servo_counterclockwise_level = @floatToInt(u16, @round(servo_half_ms_level * 4.0));
+/// The rounded number of cycles to rotate the servo counterclockwise at full speed (0.5ms * 4 = 2.5ms).
+const servo_counterclockwise_level = @floatToInt(u16, @round(servo_half_ms_level * 5.0));
 
 /// The level to select to brake/rotate the servo.
 const servo_rotate_level = servo_clockwise_level;
@@ -82,7 +81,7 @@ pub fn init() !void {
     // Here our wrap should be 0xFFFF + 1 (65536) to provide the best granularity;
     // 65536divider = servo_period * pwm_clock
     // divider = (servo_period * pwm_clock) / 65536.
-    // This results in a divider ~6.357 for a 125Mhz PWM clock and 300hz period (default).
+    // This results in a divider ~38.147 for a 125Mhz PWM clock and 50hz period (default).
     const pwm_clock = c.clock_get_hz(c.clk_sys);
     const divider = (servo_period * @intToFloat(f32, pwm_clock)) / servo_wrap;
 
@@ -103,7 +102,7 @@ pub fn init() !void {
 }
 
 /// Toggle the brake. Note that the brake takes 5.5 seconds to fully actuate and in this time
-/// a wrap IRQ will be fired every ~3.3ms.
+/// a wrap IRQ will be fired every ~20ms.
 /// This function must be called with IRQs disabled. If braking, the motor must be off;
 /// if unbraking, the caller needs to wait the full period (determined by isBrakeActuating) before
 /// turning back on the motor.
