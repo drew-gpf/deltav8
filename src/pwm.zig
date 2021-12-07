@@ -68,7 +68,7 @@ pub fn init() !void {
     c.gpio_set_function(servo_pwm_gpio, c.GPIO_FUNC_PWM);
 
     // We need to configure the PWM freerunning counter such that it has
-    // a 300hz frequency and can be high for 0.5ms, 1.5ms, or 2.5ms;
+    // a 50hz frequency and can be high for 0.5ms, 1.5ms, or 2.5ms;
     // .5ms -> full speed clockwise
     // 1.5ms -> stop
     // 2.5ms -> full speed counter-clockwise
