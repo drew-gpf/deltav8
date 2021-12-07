@@ -1,5 +1,5 @@
 # deltav8
-A motor control/break actuation system for the Raspberry Pi Pico using the RP2040 SOC with a TF-Luna LiDAR sensor (GPIO 0 and 1 allocated to UART0).
+A motor control/break actuation system for the Raspberry Pi Pico using the RP2040 SOC.
 
 # Requirements
 Generally requires the latest [Zig compiler](https://ziglang.org/download/), [CMake](https://cmake.org/download/) 3.20 or later (will need to use custom triggers for apt), a GCC embedded ARM toolchain compiler (arm-none-eabi), and the [Raspberry Pi Pico SDK](https://github.com/raspberrypi/pico-sdk).
