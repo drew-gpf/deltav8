@@ -53,7 +53,7 @@ const servo_rotate_level = servo_clockwise_level;
 const servo_unrotate_level = servo_counterclockwise_level;
 
 /// Amount of time, in seconds, the servo takes to fully rotate.
-const servo_rotate_time = 5.5;
+const servo_rotate_time = 6.5;
 
 /// Number of servo periods for the servo to fully rotate in one direction.
 const servo_rotate_cycles = @floatToInt(comptime_int, @ceil(servo_rotate_time * servo_freq));
