@@ -53,7 +53,7 @@ const servo_rotate_level = servo_clockwise_level;
 const servo_unrotate_level = servo_counterclockwise_level;
 
 /// Amount of time, in seconds, the servo takes to fully rotate.
-const servo_rotate_time = 6.5;
+const servo_rotate_time = 6.0;
 
 /// Number of servo periods for the servo to fully rotate in one direction.
 const servo_rotate_cycles = @floatToInt(comptime_int, @ceil(servo_rotate_time * servo_freq));
@@ -96,6 +96,8 @@ pub fn init() !void {
     c.pwm_set_clkdiv(servo_pwm_slice, divider);
     c.pwm_set_wrap(servo_pwm_slice, servo_pwm_wrap);
     c.pwm_set_chan_level(servo_pwm_slice, servo_pwm_chan, servo_stop_level);
+    c.pwm_clear_irq(servo_pwm_slice);
+    c.pwm_set_irq_enabled(servo_pwm_slice, false);
     c.irq_set_exclusive_handler(pwm_irq_wrap, servoWrapIrq);
     c.irq_set_enabled(pwm_irq_wrap, true);
     pwmSetEnabled(servo_pwm_slice, true);
@@ -130,11 +132,12 @@ pub inline fn isBrakeActuating() bool {
 
 /// Called when the servo PWM block wraps every servo period. Used when actuating the brake.
 fn servoWrapIrq() callconv(.C) void {
+    c.pwm_clear_irq(servo_pwm_slice);
+
     if (servo_wrap_cycles >= servo_rotate_cycles) {
         // The servo's fully rotated, so we need to tell it to stop;
         // we can also disable this IRQ.
         c.pwm_set_chan_level(servo_pwm_slice, servo_pwm_chan, servo_stop_level);
-        c.pwm_set_irq_enabled(servo_pwm_slice, false);
         servo_wrap_cycles = if (servo_braking) servo_rotate_cycles else 0;
         servo_actuating = false;
     } else {
