@@ -44,7 +44,9 @@ fn mainWrap() !void {
     logger.initLogger();
 
     try pwm.init();
-    return error.EnableLed;
+    pwm.setBrake(true);
+
+    return error.Led;
 }
 
 export fn main() void {
