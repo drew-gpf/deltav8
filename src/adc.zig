@@ -78,7 +78,7 @@ pub fn init() void {
     c.adc_select_input(throttle_adc_input);
 
     // Enable the ADC FIFO for 1 sample, and enable the ADC IRQ.
-    fifoSetup(true, false, 1, false, false);
+    fifoSetup(true, false, 1, true, false);
     c.irq_set_exclusive_handler(throttle_fifo_irq, throttleIrq);
     c.irq_set_enabled(throttle_fifo_irq, true);
     adcIrqSetEnabled(true);
@@ -108,12 +108,21 @@ pub fn getThrottleVoltage() ?u12 {
 
 /// Called when throttle ADC FIFO has been populated.
 fn throttleIrq() callconv(.C) void {
-    // Account for slight inaccuracies in measurement by clamping voltage mins and maxs, from [vmin, vmax)
-    current_throttle_voltage = switch (@truncate(u12, c.adc_fifo_get())) {
-        0...throttle_vmin => throttle_vmin,
-        throttle_vmax...std.math.maxInt(u12) => throttle_vmax - 1,
-        else => |val| val,
-    };
+    const voltage = c.adc_fifo_get();
+
+    // If the error bit (bit 15) was set, we should just ignore this measurement; see rp2040 datasheet:
+    // "Conversion errors produce undefined results, and the corresponding sample should be discarded. They indicate that
+    // the comparison of one or more bits failed to complete in the time allowed. Normally this is caused by comparator
+    // metastability, i.e. the closer to the comparator threshold the input signal is, the longer it will take to make a decision.
+    // The high gain of the comparator reduces the probability that no decision is made"
+    if ((voltage & (@as(u16, 1) << 15)) == 0) {
+        // Account for slight inaccuracies in measurement by clamping voltage mins and maxs, from [vmin, vmax)
+        current_throttle_voltage = switch (@truncate(u12, voltage)) {
+            0...throttle_vmin => throttle_vmin,
+            throttle_vmax...std.math.maxInt(u12) => throttle_vmax - 1,
+            else => |val| val,
+        };
+    }
 }
 
 // The Pico SDK abuses UB in some of its macros so I have to manually tweak them here to avoid errors;

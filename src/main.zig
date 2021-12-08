@@ -39,11 +39,10 @@ pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral),
     logger.log(prefix ++ format ++ "\n", args) catch {};
 }
 
-//const decel = 1.108219628;
-//const max_vel = 2.882992752;
-//const stopping_dist = (max_vel * max_vel) / (2.0 * decel) + 1.0;
-//const stopping_dist_cm = @floatToInt(comptime_int, @round(stopping_dist * 100.0));
-const stopping_dist_cm = 50;
+const decel = 1.108219628;
+const max_vel = 2.882992752;
+const stopping_dist = (max_vel * max_vel) / (2.0 * decel) + 1.0;
+const stopping_dist_cm = @floatToInt(comptime_int, @round(stopping_dist * 100.0));
 
 comptime {
     if (stopping_dist_cm > 1200) {
@@ -98,6 +97,13 @@ fn mainWrap() !void {
     if (watchdog_caused_reboot)
         c.gpio_put(c.PICO_DEFAULT_LED_PIN, false);
 
+    // Set a new, lower watchdog of 50ms which is enough time to transmit 5 data packets.
+    // Because we reset independent of the sensor there won't be much time between resets if something randomly goes wrong.
+    c.watchdog_enable(if (logger.stdio_enabled) 500 else 50, true);
+
+    var adc_response = false;
+    var luna_response = false;
+
     // We may need to overwrite the throttle voltage with 0 if the brake mechanism is actuating,
     // so keep track of the last known reported voltage.
     var last_reported_throttle: u12 = 0;
@@ -113,15 +119,34 @@ fn mainWrap() !void {
     while (true) {
         // Prevent race conditions by masking IRQs; assumes that IRQs are unmasked at this point
         intrin.cpsidi();
-        c.watchdog_update();
 
         if (uart.getNextLuna()) |luna| {
+            // If we already had an ADC response we can update the watchdog here.
+            if (adc_response) {
+                c.watchdog_update();
+
+                luna_response = false;
+                adc_response = false;
+            } else {
+                luna_response = true;
+            }
+
             // Assume that invalid distances represent far-away values or are too close for braking to matter
             const should_brake = if (luna.getValidDist()) |dist| dist <= stopping_dist_cm else false;
             pwm.setBrake(should_brake);
         }
 
         if (adc.getThrottleVoltage()) |voltage| {
+            // If we already had a Luna response we can update the watchdog here.
+            if (luna_response) {
+                c.watchdog_update();
+
+                luna_response = false;
+                adc_response = false;
+            } else {
+                adc_response = true;
+            }
+
             last_reported_throttle = voltage;
         }
 
