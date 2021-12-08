@@ -39,6 +39,7 @@ pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral),
     logger.log(prefix ++ format ++ "\n", args) catch {};
 }
 
+// Random values which may or may not work for your configuration.
 const decel = 1.108219628;
 const max_vel = 2.882992752;
 const stopping_dist = (max_vel * max_vel) / (2.0 * decel) + 1.0;

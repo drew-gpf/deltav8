@@ -127,7 +127,12 @@ pub inline fn controlSpeed(throttle_voltage: u12, dir: MotorDir, channel: MotorC
     const packet = MotorPacket{ .bits = .{ .speed = speed, .dir = dir, .channel = channel } };
 
     // Wait for the holding register to be transmitted, then send the given packet.
-    //while (motor_uart.isTxFifoFull()) intrin.loopHint();
+    // For some reason, the following loop will hang forever and any attempt to send a packet otherwise
+    // is ignored by the motor controller. Note that this was found to work, and with the throttle input
+    // driving it, without UART0 being connected.
+    // This.. doesn't really matter as it makes much more sense to drive the motor directly from the throttle,
+    // and to just turn off the motor via a relay if one needs to brake.
+    while (motor_uart.isTxFifoFull()) intrin.loopHint();
     motor_uart.writeByte(packet.full);
 }
 
