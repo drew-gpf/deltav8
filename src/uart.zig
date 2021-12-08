@@ -92,7 +92,7 @@ var luna_data_valid = false;
 /// UART1: Motor controller, 115200 baud rate, 8 data bits, 1 stop bit, no parity check, GPIO4 is TX (no RX)
 /// Additionally this will install an IRQ handler for UART0 on the current core.
 pub fn init() !void {
-    try initLunaUart();
+    //try initLunaUart();
     try initMotorUart();
 }
 
@@ -182,7 +182,6 @@ fn initMotorUart() !void {
     motor_uart.enableTx();
 
     std.log.debug("UART1 ready to use", .{});
-    controlSpeed(0, .clockwise, .left);
 }
 
 /// Reset the sensor.

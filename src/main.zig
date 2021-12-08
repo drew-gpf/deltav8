@@ -42,6 +42,7 @@ pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral),
 
 fn mainWrap() !void {
     logger.initLogger();
+    try uart.init();
     adc.init();
     adc.enableIrqs();
 
@@ -52,6 +53,7 @@ fn mainWrap() !void {
         intrin.cpsiei();
 
         if (voltage) |throttle| {
+            uart.controlSpeed(throttle, .clockwise, .left);
             std.log.debug("throttle voltage: {} motor speed: {}", .{ throttle, (std.math.shl(usize, throttle, std.meta.bitCount(u6))) / adc.max_throttle_voltage });
         }
     }
