@@ -118,7 +118,6 @@ pub inline fn setBrake(brake: bool) void {
     // If we're braking, we should set the servo to rotate and enable the wrap IRQ.
     // Otherwise we should rotate in the opposite direction until we've reached the amount of rotation
     // we'd done previously.
-    // To simplify logic we can invert the number of wrap cycles and only reset it to 0 once unbraking is complete.
     servo_braking = brake;
     c.pwm_set_chan_level(servo_pwm_slice, servo_pwm_chan, if (brake) servo_rotate_level else servo_unrotate_level);
 
