@@ -53,7 +53,7 @@ const servo_rotate_level = servo_clockwise_level;
 const servo_unrotate_level = servo_counterclockwise_level;
 
 /// Amount of time, in seconds, the servo takes to fully rotate.
-const servo_rotate_time = 6.0;
+const servo_rotate_time = 5.0;
 
 /// Number of servo periods for the servo to fully rotate in one direction.
 const servo_rotate_cycles = @floatToInt(comptime_int, @ceil(servo_rotate_time * servo_freq));
@@ -116,11 +116,12 @@ pub inline fn setBrake(brake: bool) void {
     // we'd done previously.
     // To simplify logic we can invert the number of wrap cycles and only reset it to 0 once unbraking is complete.
     servo_braking = brake;
-    if (!brake) servo_wrap_cycles = servo_rotate_cycles - servo_wrap_cycles;
-
     c.pwm_set_chan_level(servo_pwm_slice, servo_pwm_chan, if (brake) servo_rotate_level else servo_unrotate_level);
-    c.pwm_set_irq_enabled(servo_pwm_slice, true);
-    servo_actuating = true;
+
+    if (!servo_actuating) {
+        c.pwm_set_irq_enabled(servo_pwm_slice, true);
+        servo_actuating = true;
+    }
 }
 
 /// Returns whether or not the brake mechanism is still actuating;
@@ -134,15 +135,20 @@ pub inline fn isBrakeActuating() bool {
 fn servoWrapIrq() callconv(.C) void {
     c.pwm_clear_irq(servo_pwm_slice);
 
-    if (servo_wrap_cycles >= servo_rotate_cycles) {
+    if ((!servo_braking and servo_wrap_cycles == 0) or (servo_braking and servo_wrap_cycles >= servo_rotate_cycles)) {
         // The servo's fully rotated, so we need to tell it to stop;
         // we can also disable this IRQ.
         c.pwm_set_chan_level(servo_pwm_slice, servo_pwm_chan, servo_stop_level);
+        c.pwm_set_irq_enabled(servo_pwm_slice, false);
         servo_wrap_cycles = if (servo_braking) servo_rotate_cycles else 0;
         servo_actuating = false;
     } else {
         // Always increment after the check as the change in level should only take effect after this IRQ.
-        servo_wrap_cycles += 1;
+        if (servo_braking) {
+            servo_wrap_cycles += 1;
+        } else {
+            servo_wrap_cycles -= 1;
+        }
     }
 }
 
