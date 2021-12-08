@@ -92,6 +92,8 @@ var luna_data_valid = false;
 /// UART1: Motor controller, 115200 baud rate, 8 data bits, 1 stop bit, no parity check, GPIO4 is TX (no RX)
 /// Additionally this will install an IRQ handler for UART0 on the current core.
 pub fn init() !void {
+    luna_data_valid = false;
+
     try initLunaUart();
     try initMotorUart();
 }
@@ -125,7 +127,7 @@ pub inline fn controlSpeed(throttle_voltage: u12, dir: MotorDir, channel: MotorC
     const packet = MotorPacket{ .bits = .{ .speed = speed, .dir = dir, .channel = channel } };
 
     // Wait for the holding register to be transmitted, then send the given packet.
-    while (motor_uart.isTxFifoFull()) intrin.loopHint();
+    //while (motor_uart.isTxFifoFull()) intrin.loopHint();
     motor_uart.writeByte(packet.full);
 }
 
@@ -182,7 +184,6 @@ fn initMotorUart() !void {
     motor_uart.enableTx();
 
     std.log.debug("UART1 ready to use", .{});
-    controlSpeed(0, .clockwise, .left);
 }
 
 /// Reset the sensor.

@@ -72,6 +72,8 @@ pub const max_throttle_voltage = throttle_vmax - throttle_vmin;
 /// which will be converted and sent to getThrottleSpeed.
 /// The throttle should be powered by the 3v3 out pin and any ground pin. todo: figure out better voltage ranges.
 pub fn init() void {
+    current_throttle_voltage = null;
+
     // Init the ADC hardware and GPIO pins.
     c.adc_init();
     c.adc_gpio_init(throttle_pin);

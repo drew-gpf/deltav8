@@ -65,6 +65,10 @@ var servo_actuating: bool = false;
 
 /// Initialize the PWM hardware for the continuous servomotor on GPIO22.
 pub fn init() !void {
+    servo_wrap_cycles = 0;
+    servo_braking = false;
+    servo_actuating = false;
+
     c.gpio_set_function(servo_pwm_gpio, c.GPIO_FUNC_PWM);
 
     // We need to configure the PWM freerunning counter such that it has
