@@ -37,21 +37,30 @@ On VSCode, it will help to install the default CMake extensions provided by the 
 To flash the output file (build/deltav8.uf2) see the [official instructions](https://www.raspberrypi.com/documentation/microcontrollers/c_sdk.html).
 
 # Electrical
-First, configure the SmartDriveDuo-30 MDDS30 such that it is in Serial Simplified input mode with 115200 bps (DIP SW1->SW6; 110111). Connect the IN1 pin to GPIO4, and on the same header block the GND pin to any of the Pico's grounds. Connect your motor to the MLA/MLB ports; corresponding to the "left" motor, although only the "left" motor is ever controlled. A 50 watt motor powered at ~22 volts was used.
+First, configure the SmartDriveDuo-30 MDDS30 such that it is in Serial Simplified input mode with 115200 bps (DIP SW1->SW6; 110111). Connect the IN1 pin to GPIO4, and on the same header block the GND pin to any of the Pico's grounds. Connect your motor to the MLA/MLB ports; corresponding to the "left" motor, although only the "left" motor is ever controlled. A 50 watt motor powered at ~18 volts was used.
 
-The TF Luna's RX pin must be connected to GPIO0 and the TX pin must be connected to GPIO1. The remaining pins can be ignored; make sure they're never connected to anything. The Pico and the sensor should share the same ground reference. This can be done by powering them from the same source, which is ideal anyways as they have similar input voltages and don't consume much power.
+The TF Luna's RX pin must be connected to GPIO0 and the TX pin must be connected to GPIO1. The remaining pins can be ignored; make sure they're never connected to anything. The Pico and the sensor should share the same ground reference, which can come from the Pico if they aren't already powered from the same source. All peripherals ideally receive 5 volts with about 1 Amp able to power all of them.
 
-Finally, connect a throttle (or any potentiometer) such that it's powered by the Pico's 3V3 output and drains to the Pico's ground. The output voltage pin must be connected to GPIO26. Note that depending on throttle make there may be variance with output voltages such that the proper range of speeds aren't read from the ADC hardware. See the throttle_vmin and throttle_vmax constants in arc/adc.zig; these constants were only found to work for the throttle used with the final design. The potentiometer output must never exceed 3.3 Volts as to avoid damaging the Pico's hardware (this is avoided by powering it with a known 3.3 Volt power source via the 3V3 pin).
+To change the set stopping distance, see stopping_dist_cm in src/main.zig. It is based on a fixed worst-case deceleration and maxmimum velocity.
+
+The LS-955CR continuous servomotor's PWM input must be connected to GPIO22. In the scooter it pulls on the manual brake via a wire and a lever extension. Like with the throttle and sensor, the servo and Pico must have the same ground. See servo_rotate_time in src/pwm.zig: this is the amount of time, in seconds, that the servo takes to rotate in either direction.
+
+Finally, connect a throttle (or any potentiometer) such that it's powered by the Pico's 3V3 output through the Pico's ground. The output voltage pin must be connected to GPIO26. Note that depending on throttle make there may be variance with output voltages such that the proper range of speeds aren't read from the ADC hardware. See the throttle_vmin and throttle_vmax constants in src/adc.zig; these constants were only found to work for the throttle used with the final design. The adc_test branch can be pulled (which also controls the motor), which will output the relative and scaled values. The potentiometer output must never exceed 3.3 Volts as to avoid damaging the Pico's hardware (this is avoided by powering it with a known 3.3 Volt power source via the 3V3 pin).
 
 Alternatively, the motor controller could be removed and the throttle could be connected directly to the motor through an appropriate relay. By configuring the relay via a transistor connected to the Pico, the same (or greater) functionality can be achieved for much lower cost; the motor controller design was chosen because it was provided to us. If this method is chosen, make sure that the relay is closed while not braking and open while braking. This may also provide additional safety if the Pico ever resets or loses power but the motor does not.
 
-Also of note; the stopping distance chosen was simply a conservative value for the scooter's max speed of ~10.4 km/h and weak braking power. It could also be changed as a function of time if velocity were known.
-
-The LS-955CR continuous servomotor's PWM input must be connected to GPIO22. In the scooter it pulls on the manual brake via a wire and a lever extension. Like with the throttle and sensor, the servo and Pico must have the same ground.
-
-Limitations with the sensor unfortunately dictate that the assembly will wait ~500ms when initially plugged in to respond to input of any kind.
+Limitations with the sensor unfortunately dictate that the assembly will wait ~500ms when initially plugged in to respond to input of any kind. Any signal loss due to cabling may cause the Pico to reset, shown via the on-board LED.
 
 # Troubleshooting
-Usually something just isn't wired correctly. Verify that each component works in some form; the sensor should emit a red light from its lens if powered.
+If nothing happens, something isn't wired correctly or something isn't powered. Alternatively, there is a strange issue with how the motor controller is used; see [postmortem](#Postmortem); although this will cause the LED to start blinking. If the LED is not blinking, everything is wired correctly, and nothing happens, it may be an issue with the throttle or servo. Pull the adc_test branch and look at the output produced by the Pico with the throttle connected. It will also drive the motor controller. At rest the motor controller value should be 0 (do nothing) and when cranked it should be 63 (max speed).
 
-Make sure also you have the correct pinout and are connecting each pin correctly, and that each connection is correct. For example, the sensor's RX must connect to the Pico's UART0 TX, and the sensor's TX to the Pico's UART0 RX.
+If the LED lights up and mostly stays on, most likely the TF Luna is failing to be initialized, because it is not powered or the RX and TX pins aren't properly connected. Make sure at least that the TF Luna is on: looking directly into it you should see a red glow.
+
+If the LED starts blinking, either the Pico's ADC or the UART are not firing IRQs. Here, something is either horribly broken or caught in an infinite loop somewhere. Rest assured that all the components are initializing correctly, especially the TF Luna. Most likely it may be an issue with the motor controller; see [postmortem](#Postmortem).
+
+If the servo is not pulling the brake, it might not have enough power, might not be wired correctly, might not be a continuous servo, or might expect a slightly different pulse width or frequency. Our servo expects a 500us pulse to mean full speed clockwise, and a 2500us pulse to mean full speed anticlockwise with a 50hz signal.
+
+# Postmortem
+Despite working perfectly in the adc_test branch, the motor controller's UART; UART1; wouldn't respond to any input. Furthering this, when waiting for the UART's TX holding register to be cleared the Pico will enter an infinite loop. This causes the blinking LED. It's unclear if this is a fluke with our Pico, the rewritten UART interface, the wiring, or the motor controller. Commenting out the line to wait for the TX FIFO to not be full will solve the problem but the motor controller never registers any input from the throttle; the braking system will work but the scooter won't run.
+
+We also had to use a power supply to run any tests as our batteries for the motor were accidentally discharged and the batteries for the peripherals could not power the servo, and had slightly too high of a voltage. The final demo only demonstrates the braking system being able to stop the scooter's back wheel turned from the (manually controlled) motor.
